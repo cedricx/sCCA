@@ -1,0 +1,214 @@
+---
+title: "Create Samples"
+author: "Cedric Huchuan Xia"
+date: "01/10/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE, message = FALSE, warning = FALSE,
+	results = FALSE, eval = TRUE, cache = TRUE,
+	 fig.width = 8, fig.height = 10, tidy = TRUE
+)
+knitr::opts_knit$set(root.dir = '/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/')
+```
+
+```{r load packages}
+setwd('/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/')
+source('./script/chxRinitFunc.R')
+```
+
+## Split 1601 into 2/3 and 1/3
+```{r data split}
+#load data release
+bifactor <- read.csv('/data/joy/BBL/studies/pnc/n1601_dataFreezeDec2016/clinical/n1601_goassess_clinical_factor_scores_20161212.csv')
+demogra <- read.csv('/data/joy/BBL/studies/pnc/n1601_dataFreezeDec2016/demographics/n1601_demographics_go1_20161212.csv')
+go1data <- merge(bifactor,demogra, by = "bblid")
+go1tosplit <- go1data[,c('bblid','scanid.x','sex','race2','ageAtScan1','mood_4factor','psychosis_4factor','externalizing_4factor','phobias_4factor','overall_psychopathology_4factor')]
+#remove any NA's
+go1nona <- subset(go1tosplit,is.na(go1tosplit$overall_psychopathology_4factor)==FALSE)
+
+#split the sample
+set.seed(3456)
+trainIndex <- createDataPartition(go1nona$overall_psychopathology_4factor, p = 0.667, list =F,times=1)
+go1train <- go1nona[trainIndex,]
+go1test <- go1nona[-trainIndex,]
+
+#save the sample split
+write.csv(go1train,'./result/201701/go1train_subject.csv',row.names=FALSE, quote=FALSE)
+write.csv(go1test,'./result/201701/go1test_subject.csv',row.names=FALSE, quote=FALSE)
+```
+#### The final training set for go1 has `r dim(go1train)[1]` subjects.
+#### The final testing set for go1 has `r dim(go1test)[1]` subjects.
+
+## Visualize the sample split
+```{r visualize the sample split, echo=FALSE}
+train.title <- "Train"
+y.label <- "Percentage"
+numbin <- 15
+
+train.sex <- ggplot(go1train,aes(sex)) +
+  geom_bar(aes(y=..count../sum(..count..)*100),fill='pink',alpha=0.8, width =0.5) +
+  theme(axis.ticks = element_blank()) +
+	scale_x_discrete(limit = c("1", "2"), labels = c("male","female"))+
+	xlab("Sex") + ylab(y.label) + ggtitle(train.title)
+
+train.race <- ggplot(go1train,aes(race2)) +
+	geom_bar(aes(y=..count../sum(..count..)*100),fill='red',alpha=0.8, width =0.5) +
+	theme(axis.ticks = element_blank()) +
+	scale_x_discrete(limit = c("1", "2","3"), labels = c("White","Black","Other"))+
+	xlab("Sex") + ylab(y.label) + ggtitle(train.title)
+
+binwidth.age <- diff(range(go1train$ageAtScan1/12))/numbin
+train.age <- ggplot(go1train,aes(ageAtScan1/12)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.age,fill='orange',alpha=0.8) +
+	xlab("Age") + ylab(y.label) + ggtitle(train.title)
+
+binwidth.mod <- diff(range(go1train$mood_4factor))/numbin
+train.mood <- ggplot(go1train,aes(mood_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.mod,fill='yellow',alpha=0.8) +
+	xlab("Mood") + ylab(y.label) + ggtitle(train.title)
+
+binwidth.psych <- diff(range(go1train$psychosis_4factor))/numbin
+train.psych <- ggplot(go1train,aes(psychosis_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.psych,fill='green',alpha=0.8) +
+	xlab("Psychosis") + ylab(y.label) + ggtitle(train.title)
+
+binwidth.ext <- diff(range(go1train$externalizing_4factor))/numbin
+train.ext <- ggplot(go1train,aes(externalizing_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.ext,fill='cyan',alpha=0.8) +
+	xlab("Ext") + ylab(y.label) + ggtitle(train.title)
+
+binwidth.pnb <- diff(range(go1train$phobias_4factor))/numbin
+train.pnb <- ggplot(go1train,aes(phobias_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.pnb,fill='blue',alpha=0.8) +
+	xlab("Phb") + ylab(y.label) + ggtitle(train.title)
+
+binwidth.allpsych <- diff(range(go1train$overall_psychopathology_4factor))/numbin
+train.allpsych <- ggplot(go1train,aes(overall_psychopathology_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.allpsych,fill='purple',alpha=0.8) +
+	xlab("Overall Psych") + ylab(y.label) + ggtitle(train.title)
+
+test.title <- "Test"
+
+test.sex <- ggplot(go1test,aes(sex)) +
+	geom_bar(aes(y=..count../sum(..count..)*100),fill='pink',alpha=0.5, width =0.5) +
+	theme(axis.ticks = element_blank()) +
+	scale_x_discrete(limit = c("1", "2"), labels = c("male","female"))+
+	xlab("Sex") + ylab(y.label) + ggtitle(test.title)
+
+test.race <- ggplot(go1test,aes(race2)) +
+	geom_bar(aes(y=..count../sum(..count..)*100),fill='red',alpha=0.5, width =0.5) +
+	theme(axis.ticks = element_blank()) +
+	scale_x_discrete(limit = c("1", "2","3"), labels = c("White","Black","Other"))+
+	xlab("Sex") + ylab(y.label) + ggtitle(test.title)
+
+binwidth.age <- diff(range(go1test$ageAtScan1/12))/numbin
+test.age <- ggplot(go1test,aes(ageAtScan1/12)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.age,fill='orange',alpha=0.5) +
+	xlab("Age") + ylab(y.label) + ggtitle(test.title)
+
+binwidth.mod <- diff(range(go1test$mood_4factor))/numbin
+test.mood <- ggplot(go1test,aes(mood_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.mod,fill='yellow',alpha=0.5) +
+	xlab("Mood") + ylab(y.label) + ggtitle(test.title)
+
+binwidth.psych <- diff(range(go1test$psychosis_4factor))/numbin
+test.psych <- ggplot(go1test,aes(psychosis_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.psych,fill='green',alpha=0.5) +
+	xlab("Psychosis") + ylab(y.label) + ggtitle(test.title)
+
+binwidth.ext <- diff(range(go1test$externalizing_4factor))/numbin
+test.ext <- ggplot(go1test,aes(externalizing_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.ext,fill='cyan',alpha=0.5) +
+	xlab("Ext") + ylab(y.label) + ggtitle(test.title)
+
+binwidth.pnb <- diff(range(go1test$phobias_4factor))/numbin
+test.pnb <- ggplot(go1test,aes(phobias_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.pnb,fill='blue',alpha=0.5) +
+	xlab("Phb") + ylab(y.label) + ggtitle(test.title)
+
+binwidth.allpsych <- diff(range(go1test$overall_psychopathology_4factor))/numbin
+test.allpsych <- ggplot(go1test,aes(overall_psychopathology_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.allpsych,fill='purple',alpha=0.5) +
+	xlab("Overall Psych") + ylab(y.label) + ggtitle(test.title)
+
+data.split.plot<- plot_grid(train.sex, test.sex, train.race, test.race, train.age, test.age,
+		  train.mood, test.mood, train.ext, test.ext, train.psych, test.psych,
+		  train.pnb, test.pnb, train.allpsych, test.allpsych,
+		   align = "h", nrow =4)
+
+data.split.plot
+```
+
+## upload to plot.ly
+```{r plot.ly}
+library(plotly)
+
+```
+
+## Apply exclusion criteria
+```{r build rsfc motion flags}
+#load 1601 bblid
+go1id <- read.csv('./data/n1601_bblid_scanid_dateid.csv')
+go1id$datexscanid <- paste(go1id$dateid, 'x', go1id$scanid, sep='')
+
+#load motion measures
+go1.motion <- read.csv('./data/rsfc_quality.csv',row.names=NULL)
+colnames(go1.motion)[1:2] <- c("bblid","datexscanid") 
+temp<-merge(go1.motion[,c("bblid","datexscanid","relMeanRMSmotion","nframesHighMotionrms0.25")],go1id[,c("bblid","datexscanid")])
+
+namotion <- subset(go1id[,c("bblid","datexscanid")],!is.element(go1id$bblid,go1.motion$bblid))
+namotion$relMeanRMSmotion <- rep(NA,dim(namotion)[1])
+namotion$nframesHighMotionrms0.25 <- rep(NA,dim(namotion)[1])
+go1.all.motion <- rbind(temp,namotion)
+
+write.csv(go1.all.motion,"./result/201701/go1_motion.csv",quote=F,row.names=F)
+```
+### Rsfc Motion exclusion
+* `r length(which(go1.all.motion$relMeanRMSmotion>0.2 | go1.all.motion$nframesHighMotionrms0.25 >20))` subjects from `r dim(go1.motion)[1]` who had useable restbold failed the motion exclusion criteria
+* The criteria are 1) relMeanRMSmotion > 0.2 mm (n=`r length(which(go1.all.motion$relMeanRMSmotion>0.2))`); or 2) nframesHighMotionrms0.25 > 20 (n=`r length(which(go1.all.motion$nframesHighMotionrms0.25 >20))`)
+
+```{r network coverage: Power}
+#load power network coverage
+go1.powerqa <- read.csv('./data/go1powermissing.csv',header=F)
+nodes <- as.character(go1.powerqa$V3)
+go1.powerqa$powernummiss <- lengths(strsplit(as.character(nodes),' ', fixed= TRUE))
+#go1.powerqa$V3 <- strsplit(as.character(nodes),' ', fixed= TRUE)
+colnames(go1.powerqa)[1:3] <- c("bblid","datexscanid","powermissnodes")
+
+napower <- subset(go1id[,c("bblid","datexscanid")],!is.element(go1id$bblid,go1.powerqa$bblid))
+napower$powermissnodes <- rep(NA,dim(napower)[1])
+napower$powernummiss <- rep(0,dim(napower)[1])
+go1.all.power <- rbind(go1.powerqa,napower)
+
+write.csv(go1.all.power,"./result/201701/go1_power.csv",quote=F,row.names=F)
+```
+### Rsfc network(power) exclusion
+* `r length(which(go1.all.power$powernummiss >1))` subjects from `r dim(go1.motion)[1]` who had useable restbold failed the power network exclusion criteria
+* The criteria is missing more than 1 node
+
+```{r network coverage: Laussane}
+#load Laussane network coverage
+go1.lauqa <- read.csv('./data/go1laumissing.csv',header=F)
+launodes <- as.character(go1.lauqa$V3)
+go1.lauqa$launummiss <- lengths(strsplit(as.character(launodes),' ', fixed= TRUE))
+#go1.lauqa$V3 <- strsplit(as.character(launodes),' ', fixed= TRUE)
+colnames(go1.lauqa)[1:3] <- c("bblid","datexscanid","laumissnodes")
+
+nalau <- subset(go1id[,c("bblid","datexscanid")],!is.element(go1id$bblid,go1.lauqa$bblid))
+nalau$laumissnodes <- rep(NA,dim(nalau)[1])
+nalau$launummiss <- rep(0,dim(nalau)[1])
+go1.all.lau <- rbind(go1.lauqa,nalau)
+
+write.csv(go1.all.lau,"./data/go1_lau.csv",quote=F,row.names=F)
+
+```
+### Rsfc network(Laussane) exclusion
+* `r length(which(go1.all.lau$launummiss >1))` subjects from `r dim(go1.motion)[1]` who had useable restbold failed the Laussane network exclusion criteria
+* The criteria is missing more than 1 node
+
+
+
+

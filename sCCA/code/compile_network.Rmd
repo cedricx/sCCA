@@ -1,0 +1,127 @@
+---
+title: "Create final sample (netmat, med, CNB)"
+author: "Cedric Huchuan Xia"
+date: "09/02/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE,
+	results = FALSE, eval = TRUE, cache = TRUE,
+	 fig.width = 7, fig.height = 7, tidy = TRUE
+)
+knitr::opts_knit$set(root.dir = '/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/')
+```
+
+
+```{r load packages, message=FALSE, warning=FALSE, cache=TRUE}
+setwd('/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/')
+source('./script/chxRinitFunc.R')
+```
+
+```{r compile a master training sample}
+healthx <- read.csv('/data/joy/BBL/studies/pnc/n1601_dataFreezeDec2016/health/n1601_health_20161214.csv')
+mox <- read.csv('./result/201701/go1_motion.csv')
+powx <- read.csv('./result/201701/go1_power.csv')
+trainidx <- read.csv('./result/201701/go1train_subject.csv')
+trainmaster <- merge(trainidx,mox)
+trainmaster <- merge(trainmaster,powx)
+trainmaster <- merge(trainmaster, healthx)
+write.csv(trainmaster,'./result/201701/trainmaster.csv',quote=F,row.names=F)
+
+#apply exclusion criteria. See below for the tally
+trainsampleidx <- which(trainmaster$relMeanRMSmotion>0.2 |is.na(trainmaster$relMeanRMSmotion)==T | trainmaster$nframesHighMotionrms0.25>20 | trainmaster$powernummiss>1 | trainmaster$healthExcludev2 == 1)
+trainsample <- trainmaster[-trainsampleidx,]
+write.csv(trainsample,'./result/201701/trainsample.csv',quote=F,row.names=F)
+
+testidx <- read.csv('./result/201701/go1test_subject.csv')
+testmaster <- merge(testidx,mox)
+testmaster <- merge(testmaster,powx)
+testmaster <- merge(testmaster, healthx)
+write.csv(testmaster,'./result/201701/testmaster.csv',quote=F,row.names=F)
+
+#apply exclusion criteria. See below for the tally
+testsampleidx <- which(testmaster$relMeanRMSmotion>0.2 |is.na(testmaster$relMeanRMSmotion)==T | testmaster$nframesHighMotionrms0.25>20 | testmaster$powernummiss>1 | testmaster$healthExcludev2 == 1 )
+testsample <- testmaster[-testsampleidx,]
+write.csv(testsample,'./result/201701/testsample.csv',quote=F,row.names=F)
+
+```
+
+## Training sample tally
+#### For Power Analysis with psychopathology alone
+#### Out of `r dim(trainidx)[1]` training subjects in Go1, `r length(trainsampleidx)` were excluded for the following criteria, leaving `r dim(trainsample)[1]` subjects:
+
+##### 1. no usable rsfc scans (n=`r length(which(is.na(trainmaster$relMeanRMSmotion)==T))`)
+##### 2. healthEx ==1 (n=`r length(which(trainmaster$healthExclude == 1))`)
+##### 3. motion >0.2mm (n=`r length(which(trainmaster$relMeanRMSmotion>0.2))`)
+##### 4. nframe >20 (n=`r length(which(trainmaster$nframesHighMotionrms0.25>20))`)
+##### 5. uncovered power node >1 (n=`r length(which(trainmaster$powernummiss>1))`)
+
+### Concatenate power,lausanne
+```{r load appropriate rsfc network}
+trainpower<-array(NA, c(264, 264, dim(trainsample)[1]))
+for (i in 1:dim(trainsample)[1]){
+  id <- trainsample$bblid[i]
+  tp <- trainsample$datexscanid[i]
+  powerpath<- paste("/data/joy/BBL/studies/pnc/processedData/restbold/restbold_201607151621/",id,"/",tp,"/net/264PowerPNC/",id,"_",tp,"_264PowerPNC_network.txt",sep="")
+  trainpower[,,i] <- as.matrix(read.table(powerpath))
+  print(paste(i,"."," copying ",id,"_",tp," network",sep=""))
+  }
+
+testpower<-array(NA, c(264, 264, dim(testsample)[1]))
+for (i in 1:dim(testsample)[1]){
+  id <- testsample$bblid[i]
+  tp <- testsample$datexscanid[i]
+  powerpath<- paste("/data/joy/BBL/studies/pnc/processedData/restbold/restbold_201607151621/",id,"/",tp,"/net/264PowerPNC/",id,"_",tp,"_264PowerPNC_network.txt",sep="")
+  testpower[,,i] <- as.matrix(read.table(powerpath))
+  print(paste(i,"."," copying ",id,"_",tp," network",sep=""))
+  }
+```
+
+```{r save concatenated matrix}
+save(trainpower, file ="./result/201701/go1_train_power_netmat.RData")
+save(testpower, file ="./result/201701/go1_test_power_netmat.RData")
+```
+
+```{r make feature table of the matrix}
+power.ft.train <-t(apply(trainpower,c(3),function(x) x[upper.tri(x, diag = F)]))
+rownames(power.ft.train) <- trainsample$bblid
+power.ft.train[is.na(power.ft.train)] <-0
+write.csv(power.ft.train,"./result/201701/go1_train_power_ft.csv",quote=F)
+save(power.ft.train,file ="./result/201701/go1_train_power_ft.RData")
+
+power.ft.test <-t(apply(testpower,c(3),function(x) x[upper.tri(x, diag = F)]))
+rownames(power.ft.test) <- testsample$bblid
+power.ft.test[is.na(power.ft.test)] <-0
+write.csv(power.ft.test,"./result/201701/go1_test_power_ft.csv",quote=F)
+save(power.ft.test,file ="./result/201701/go1_test_power_ft.RData")
+```
+
+#### Power: `r dim(power.ft.train)[1]` subjects with `r dim(power.ft.train)[2]` unique edges
+#### Laussane: `r dim(lau.ft.train)[1]` subjects with `r dim(lau.ft.train)[2]` unique edges
+
+#### Average Network of Power for all training subjects
+```{r average power net mat, echo=FALSE }
+trainpowerave <- apply(trainpower, c(1,2), function(x) mean(na.omit(x)))
+testpowerave <- apply(testpower, c(1,2), function(x) mean(na.omit(x)))
+
+save(trainpowerave,testpowerave,file="./result/201701/net_power_ave.RData")
+levelplot(testpowerave, at = seq(-1,1,length=10),par.settings = BuRdTheme(),xlab='',ylab='',main="Test Set")
+levelplot(trainpowerave, at = seq(-1,1,length=10),par.settings = BuRdTheme(),xlab='',ylab='',main="Train Set")
+```
+
+
+
+### Compile clinical data for the training data 
+``` {r clinical}
+load('./result/201701/med_impute.RData')
+trainsample <- read.csv('./result/201701/trainsample.csv')
+med.train <- subset(med.final, is.element(med.final$bblid,trainsample$bblid)) 
+testsample <- read.csv('./result/201701/testsample.csv')
+med.test <- subset(med.final, is.element(med.final$bblid,testsample$bblid)) 
+#save the 111 training sample
+save(med.train,med.test,file= "./result/201701/med_cv_split.RData")
+```
+#### There are `r dim(meddata112.train)[1]` subjects with `r dim(meddata112.train)[2]-1` clinical items
+
