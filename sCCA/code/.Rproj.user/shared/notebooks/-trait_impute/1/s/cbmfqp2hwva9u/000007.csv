@@ -1,0 +1,5 @@
+"0","save(trait_miss,trait.final,trait.inc.imp, trait_inc,file = '../aim1/result/201701/trait_impute.RData')
+"
+"2","cannot open compressed file '../aim1/result/201701/trait_impute.RData', probable reason 'No such file or directory'"
+"2","Error in gzfile(file, ""wb"") : cannot open the connection
+"

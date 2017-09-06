@@ -16,11 +16,13 @@ numImp <- 15
 med.item.imp.rm <- mice(med.item.rm, m = numImp, maxit = 20, method= "pmm",visitSequence = 'monotone',printFlag = FALSE)
 med.item.imp.all <- mice(med.item, m = numImp, maxit = 20, method= "pmm",printFlag = FALSE)
 
-
+## compile the 15 imputation together by taking the average
 med.cpl.rm<-lapply(1:numImp,function(x) complete(med.item.imp.rm,action = x))
 med.cpl.rm.out<-do.call(abind, c(med.cpl.rm, along = 3))
 med.cpl.rm.out.mean<-apply(med.cpl.rm.out, c(1,2), mean)
 med.cpl.rm.out.round <- round(med.cpl.rm.out.mean)
+med.final <- cbind(bblid = med$bblid,med.cpl.rm.out.round)
+med.final <- as.data.frame(med.final)
 
-save(med.cpl.rm.out.round,med.item.imp.all,med.item.imp.rm,med.item,med.item.rm,med.vis,file = './result/med_impute.RData')
+save(med.final,med.cpl.rm.out.round,med.item.imp.all,med.item.imp.rm,med.item,med.item.rm,med.vis,file = './result/201701/med_impute.RData')
 

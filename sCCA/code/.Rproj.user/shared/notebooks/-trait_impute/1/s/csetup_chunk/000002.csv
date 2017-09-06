@@ -1,0 +1,122 @@
+"0","knitr::opts_knit$set(root.dir = '/Users/hxia/Desktop/BBL/')"
+"0","require(""rasterVis"")"
+"2","Loading required package: rasterVis
+"
+"2","Loading required package: raster
+"
+"2","Loading required package: sp
+"
+"2","
+Attaching package: ‘raster’
+
+"
+"2","The following objects are masked from ‘package:MASS’:
+
+    area, select
+
+"
+"2","Loading required package: latticeExtra
+"
+"2","Loading required package: RColorBrewer
+"
+"2","
+Attaching package: ‘latticeExtra’
+
+"
+"2","The following object is masked from ‘package:ggplot2’:
+
+    layer
+
+"
+"0","require('PMA')"
+"0","require('Matrix')"
+"0","require('parallel')"
+"0","require('emdbook')"
+"0","require('caret')"
+"0","require('R.matlab')"
+"0","require('MASS')"
+"0","require('permute')"
+"0","require('matrixStats')"
+"0","require('scales')"
+"0","require('ggrepel')"
+"2","Loading required package: ggrepel
+"
+"0","require('cowplot')"
+"2","Loading required package: cowplot
+"
+"2","
+Attaching package: ‘cowplot’
+
+"
+"2","The following object is masked from ‘package:ggplot2’:
+
+    ggsave
+
+"
+"0","require('VIM')"
+"2","Loading required package: VIM
+"
+"2","Loading required package: colorspace
+"
+"2","
+Attaching package: ‘colorspace’
+
+"
+"2","The following object is masked from ‘package:raster’:
+
+    RGB
+
+"
+"2","Loading required package: grid
+"
+"2","Loading required package: data.table
+"
+"2","data.table 1.10.0
+"
+"2","**********
+This installation of data.table has not detected OpenMP support. It will still work but in single-threaded mode.
+**********
+"
+"2","  The fastest way to learn (by data.table authors): https://www.datacamp.com/courses/data-analysis-the-data-table-way
+"
+"2","  Documentation: ?data.table, example(data.table) and browseVignettes(""data.table"")
+"
+"2","  Release notes, videos and slides: http://r-datatable.com
+"
+"2","
+Attaching package: ‘data.table’
+
+"
+"2","The following object is masked from ‘package:raster’:
+
+    shift
+
+"
+"2","VIM is ready to use. 
+ Since version 4.0.0 the GUI is in its own package VIMGUI.
+
+          Please use the package to use the new (and old) GUI.
+
+"
+"2","Suggestions and bug-reports can be submitted at: https://github.com/alexkowa/VIM/issues
+"
+"2","
+Attaching package: ‘VIM’
+
+"
+"2","The following object is masked from ‘package:datasets’:
+
+    sleep
+
+"
+"0","require('mice')"
+"2","Loading required package: mice
+"
+"2","Loading required package: Rcpp
+"
+"2","mice 2.25 2015-11-09
+"
+"0","require('abind')"
+"2","Loading required package: abind
+"
+"0","source('~/Desktop/BBL/projects/xiaNetworkCca/sCCA/code/cca_functions.R')"

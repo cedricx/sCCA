@@ -1,0 +1,128 @@
+---
+title: "compile_network_pwr_test"
+output: html_notebook
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = '/Users/hxia/Desktop/BBL/')
+require("rasterVis")
+require('PMA')
+require('Matrix')
+require('parallel')
+require('emdbook')
+require('caret')
+require('R.matlab')
+require('MASS')
+require('permute')
+require('matrixStats')
+require('scales')
+source('~/Desktop/BBL/projects/xiaNetworkCca/sCCA/code/cca_functions.R')
+```
+
+
+```{r compile a master training sample with squeakyclean}
+# load test-test split
+sample_sub <- read.csv("./projects/xiaNetworkCca/sCCA/aim1/result/201701/go1train_subject.csv")
+
+# apply subject-level exclusion
+hx_qa <- read.csv("./studies/pnc/n1601_dataFreezeDec2016/health/n1601_health_20161214.csv")
+sample_hx <- merge(sample_sub,hx_qa)
+sample_qa <- subset(sample_hx,  squeakycleanExclude== 0)
+
+# apply strc exclusion
+t1_qa <- read.csv("./studies/pnc/n1601_dataFreeze2016/neuroimaging/t1struct/n1601_t1QaData_v2.csv")
+sample_t1 <- merge(sample_qa, t1_qa)
+sample_qa <- subset(sample_t1, t1Exclude == 0)
+
+# load modality exclusion file from the data-freeze
+mod_qa <- read.csv("./studies/pnc/n1601_dataFreeze2016/neuroimaging/rest/n1601_RestQAData.csv")
+sample_mod <- merge(sample_qa,mod_qa)
+sample_qa <- subset(sample_mod, restExclude ==0)
+
+sample_qa<-sample_qa[order(sample_qa$bblid),]
+health_train_qa <- sample_qa
+```
+
+```{r pick the oldest healthy}
+health_train_age_qa <- subset(health_train_qa, ageAtScan1 >= 16*12 )
+```
+
+```{r all train sample }
+train_all_qa <- pwr_train_qa
+```
+
+```{r all train+test sample only healthy}
+train_sample_sub <- read.csv("./projects/xiaNetworkCca/sCCA/aim1/result/201701/go1train_subject.csv")
+test_sample_sub <- read.csv("./projects/xiaNetworkCca/sCCA/aim1/result/201701/go1test_subject.csv")
+sample_sub <- rbind(train_sample_sub,test_sample_sub)
+
+# apply subject-level exclusion
+hx_qa <- read.csv("./studies/pnc/n1601_dataFreezeDec2016/health/n1601_health_20161214.csv")
+sample_hx <- merge(sample_sub,hx_qa)
+sample_qa <- subset(sample_hx,  squeakycleanExclude== 0)
+
+# apply strc exclusion
+t1_qa <- read.csv("./studies/pnc/n1601_dataFreeze2016/neuroimaging/t1struct/n1601_t1QaData_v2.csv")
+sample_t1 <- merge(sample_qa, t1_qa)
+sample_qa <- subset(sample_t1, t1Exclude == 0)
+
+# load modality exclusion file from the data-freeze
+mod_qa <- read.csv("./studies/pnc/n1601_dataFreeze2016/neuroimaging/rest/n1601_RestQAData.csv")
+sample_mod <- merge(sample_qa,mod_qa)
+sample_qa <- subset(sample_mod, restExclude ==0)
+
+all_sample_qa <- sample_qa
+
+```
+
+```{r load and regress appropriate network}
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_3k_stats.RData")
+health_train_net_rg <- load_reg_power_net(health_train_qa)
+health_train_age_net_rg <- load_reg_power_net(health_train_age_qa)
+train_all_net <- load_reg_power_net(train_all_qa)
+```
+
+```{r make mask mat}
+health_train_mask <-mask_mat(health_train_net_rg)
+health_train_age_mask <-mask_mat(health_train_age_net_rg)
+all_train_mask <-mask_mat(train_all_net)
+save(list = ls(pattern = "*mask")[1:3], file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_train_masks.RData")
+```
+
+```{r make feature table of all healthy samples}
+all_net_ft <- load_power_net(all_sample_qa)
+sign_mat <- sign(sample_net_ft_rg)
+```
+```{r}
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_regr_data.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_train_qa.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_3k_stats.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_parcels.RData")
+pwr.rgr.train.std <- apply(pwr.rgr.train,2,scale)
+
+healthy_age_mask_ft <- subset(pwr.rgr.train.std,pwr_train_qa$squeakycleanExclude == 0 & pwr_train_qa$ageAtScan1 >= 16*12)
+health_age_rgr_mask <-mask_mat(healthy_age_mask_ft)
+
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_train_masks.RData")
+save(list = ls(pattern = "*mask")[1:4], file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_train_masks.RData")
+
+pwr.train.ft.htage <- subset(pwr.train.ft,pwr_train_qa$squeakycleanExclude == 0 & pwr_train_qa$ageAtScan1 >= 16*12)
+pwr.rgr.train.htage <- subset(pwr.rgr.train,pwr_train_qa$squeakycleanExclude == 0 & pwr_train_qa$ageAtScan1 >= 16*12)
+
+mod_of_interest <- 5
+pwr.train.ft_mask <- mask_mat_mod(pwr.train.ft,mod_of_interest)
+pwr.train.ft.htage_mask <- mask_mat_mod(pwr.train.ft.htage,mod_of_interest)
+pwr.rgr.train_mask <- mask_mat_mod(pwr.rgr.train,mod_of_interest)
+pwr.rgr.train.htage_mask <- mask_mat_mod(pwr.rgr.train.htage,mod_of_interest)
+
+
+pwr.train.ft_mask$plot
+pwr.train.ft.htage_mask$plot
+pwr.rgr.train_mask$plot
+pwr.rgr.train.htage_mask$plot
+```
+
+
+
+
+

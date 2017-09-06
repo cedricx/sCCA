@@ -1,0 +1,103 @@
+---
+title: "Create final sample (netmat, med, CNB)"
+author: "Cedric Huchuan Xia"
+date: "09/02/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE,
+	results = FALSE, eval = TRUE, cache = TRUE,
+	 fig.width = 7, fig.height = 7, tidy = TRUE
+)
+knitr::opts_knit$set(root.dir = '/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/')
+```
+
+
+```{r load packages, message=FALSE, warning=FALSE, cache=TRUE}
+setwd('/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/')
+source('./script/chxRinitFunc.R')
+```
+
+```{r compile a master training sample}
+# load qa file from DTI and Rest_lau
+load("./result/201701/dti_train_qa.RData")
+load("./result/201701/lau_train_qa.RData")
+
+sample_qa <- merge(dti_train_qa,lau_train_qa,by.x= "bblid.x", by.y = "bblid")
+restdti_train_qa <- sample_qa
+
+save(restdti_train_qa,file="./result/201701/restdti_train_qa.RData")
+
+```
+
+
+### Concatenate DIT lausanne
+```{r load appropriate network}
+n_sample <- dim(sample_qa)[1]
+
+dti_sample_net<-array(NA, c(234, 234, n_sample))
+for (i in 1:n_sample){
+  scanid <- sample_qa$scanid.x[i]
+  netpath<- paste("/data/joy/BBL/studies/pnc/n1601_dataFreeze2016/neuroimaging/dti/deterministic_dec2016/FA/LausanneScale125/",scanid,"_FA_LausanneScale125.mat",sep="")
+  dti_sample_net[,,i] <- as.matrix(readMat(netpath)$connectivity)
+  print(paste(i,"."," copying ",scanid,"_"," dti",sep=""))
+  }
+
+rest_sample_net<-array(NA, c(234, 234, n_sample))
+for (i in 1:n_sample){
+  scanid <- sample_qa$scanid.x[i]
+  netpath<- paste("/data/joy/BBL/studies/pnc/n1601_dataFreeze2016/neuroimaging/rest/restNetwork_Lausanne125/Lausanne125Networks/",scanid,"_Lausanne125_network.txt",sep="")
+  rest_sample_net[,,i] <- as.matrix(read.table(netpath))
+  print(paste(i,"."," copying ",scanid,"_","Lau",sep=""))
+  }
+
+
+```
+
+```{r save concatenated matrix}
+dti_combo_train_net <- dti_sample_net
+rest_combo_train_net <- rest_sample_net
+
+save(dti_combo_train_net,rest_combo_train_net, file ="./result/201701/restdti_train_netmat.RData")
+```
+
+```{r make feature table of the matrix}
+dti_net_ft <-t(apply(dti_sample_net,c(3),function(x) x[upper.tri(x, diag = F)]))
+rownames(dti_net_ft) <- sample_qa$bblid.x
+dti_train_net_ft <- dti_net_ft
+
+rest_net_ft <-t(apply(rest_sample_net,c(3),function(x) x[upper.tri(x, diag = F)]))
+rownames(rest_net_ft) <- sample_qa$bblid.x
+rest_train_net_ft <- rest_net_ft
+
+save(dti_train_net_ft,rest_train_net_ft,file ="./result/201701/restdti_train_ft.RData")
+
+```
+
+#### Average Network of Power for all training subjects
+```{r average power net mat, echo=FALSE }
+dti_net_ave <- apply(dti_sample_net, c(1,2), function(x) mean(na.omit(x)))
+dti_combo_train_ave <- dti_net_ave
+levelplot(dti_net_ave, at = seq(-1,1,length=10),par.settings = BuRdTheme(),xlab='',ylab='',main="RestDTI Train Set")
+
+rest_net_ave <- apply(rest_sample_net, c(1,2), function(x) mean(na.omit(x)))
+rest_combo_train_ave <- rest_net_ave
+levelplot(rest_net_ave, at = seq(-1,1,length=10),par.settings = BuRdTheme(),xlab='',ylab='',main="RestDTI Train Set")
+
+save(dti_combo_train_ave,file="./result/201701/net_restdti_ave.RData")
+```
+
+
+
+### Compile clinical data for the training data 
+``` {r clinical}
+load('./result/201701/med_impute.RData')
+med.sample <- subset(med.final, is.element(med.final$bblid,sample_qa$bblid.x)) 
+#save the 111 training sample
+restdti_train_med <- med.sample
+save(restdti_train_med,file= "./result/201701/restdti_train_med.RData")
+```
+#### There are `r dim(meddata112.train)[1]` subjects with `r dim(meddata112.train)[2]-1` clinical items
+

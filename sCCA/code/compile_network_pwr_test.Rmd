@@ -1,0 +1,272 @@
+---
+title: "compile_network_pwr_test"
+output: html_notebook
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = '/Users/hxia/Desktop/BBL/')
+require("rasterVis")
+require('PMA')
+require('Matrix')
+require('parallel')
+require('emdbook')
+require('caret')
+require('R.matlab')
+require('MASS')
+require('permute')
+require('matrixStats')
+require('scales')
+require("cowplot")
+```
+
+
+```{r compile a master testing sample}
+# load test-test split
+testsub <- read.csv("./projects/xiaNetworkCca/sCCA/aim1/result/201701/go1test_subject.csv")
+trainsub <- read.csv("./projects/xiaNetworkCca/sCCA/aim1/result/201701/go1train_subject.csv")
+
+sample_sub <- read.csv("./projects/xiaNetworkCca/sCCA/aim1/result/201701/go1test_subject.csv")
+sample_sub <- rbind(trainsub,testsub)
+sample_sub <- read.csv("./projects/xiaNetworkCca/sCCA/aim1/result/201701/go1train_subject.csv")
+
+
+# apply subject-level exclusion
+hx_qa <- read.csv("./studies/pnc/n1601_dataFreeze/health/n1601_health_20161214.csv")
+sample_hx <- merge(sample_sub,hx_qa)
+sample_qa <- subset(sample_hx, healthExcludev2 == 0)
+
+# apply strc exclusion
+t1_qa <- read.csv("./studies/pnc/n1601_dataFreeze/neuroimaging/t1struct/old/n1601_t1QaData_v2_20161215.csv")
+sample_t1 <- merge(sample_qa, t1_qa)
+sample_qa <- subset(sample_t1, t1Exclude == 0)
+
+# load modality exclusion file from the data-freeze
+mod_qa <- read.csv("./studies/pnc/n1601_dataFreeze/neuroimaging/rest/n1601_RestQAData_20170318.csv")
+sample_mod <- merge(sample_qa,mod_qa)
+sample_qa <- subset(sample_mod, restExclude ==0)
+
+sample_qa<-sample_qa[order(sample_qa$bblid),]
+pwr_test_qa <- sample_qa
+save(pwr_test_qa,file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_qa.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_qa.RData")
+```
+
+```{r load appropriate network}
+n_sample <- dim(sample_qa)[1]
+sample_net<-array(NA, c(264, 264, n_sample))
+for (i in 1:n_sample){
+  scanid <- sample_qa$scanid[i]
+  netpath<- paste("./studies/pnc/n1601_dataFreeze/neuroimaging/rest/restNetwork_264PowerPNC/264PowerPNCNetworks/",scanid,"_264PowerPNC_network.txt",sep="")
+ sample_net[,,i] <- as.matrix(read.table(netpath))
+   print(paste(i,"."," copying ",scanid,"_","Power",sep=""))
+  }
+pwr_test_net<-sample_net
+save(pwr_test_net, file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_netmat.RData")
+```
+
+```{r make feature table of the matrix}
+net_ft <-t(apply(sample_net,c(3),function(x) x[upper.tri(x, diag = F)]))
+rownames(net_ft) <- sample_qa$bblid
+
+pwr_test_net_ft <- net_ft
+save(pwr_test_net_ft,file ="./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_net_ft.RData")
+```
+
+
+```{r average power net mat}
+net_ave <- apply(sample_net, c(1,2), function(x) mean(na.omit(x)))
+pwr_test_ave <- net_ave
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_parcels.RData")
+
+pwr_test_ave <- pwr_test_ave[parcelsTR$ROI,parcelsTR$ROI]
+save(pwr_test_ave,file="./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_ave.RData")
+levelplot(pwr_test_ave, at = seq(-1,1,length=10),par.settings = BuRdTheme(),xlab='',ylab='',main="Power test Set")
+
+#pwr.3k.test.ave <- pwr.3k.test.ave[parcelsTR$ROI,parcelsTR$ROI]
+#levelplot(pwr.3k.test.ave, at = seq(-1,1,length=10),par.settings = BuRdTheme(),xlab='',ylab='',main="Power test Set")
+```
+
+
+```{r compile the include edges from testing data and regress}
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_3k_stats.RData")
+inc_idx <- pwr.3k.train.idx
+inc_net <- pwr_test_net_ft[,inc_idx]
+
+# Compile covariates
+sample_qa$sex <- as.factor(sample_qa$sex)
+sample_qa$race2 <- as.factor(sample_qa$race2)
+
+# regress out covariates on the individual edges
+power.rgr <- matrix(NA, nrow = dim(inc_net)[1], ncol = dim(inc_net)[2])
+inc_net[which(is.na(inc_net))] <- 0
+
+power.rgr <- apply(inc_net, 2, function(x) residuals.glm(glm(x ~ ageAtScan1 + 
+    sex + race2 + restRelMeanRMSMotion, data = sample_qa), type = "response"))
+rownames(power.rgr) <- rownames(pwr_test_net_ft)
+
+# PCA-on these data
+power.rgr.pca <-prcomp(power.rgr, center = FALSE)
+
+pwr.rgr.test <- power.rgr
+pwr.rgr.pca.test <- power.rgr.pca
+save(pwr.rgr.pca.test,pwr.rgr.test,file='./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_regr_test_data.RData')
+```
+
+``` {r clinical}
+load('./projects/xiaNetworkCca/sCCA/aim1/result/201701/med_impute.RData')
+med.sample <- subset(med.final, is.element(med.final$bblid,sample_qa$bblid)) 
+#save the 111 testing sample
+pwr_test_med<-med.sample
+save(pwr_test_med,file= "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_med.RData")
+```
+
+```{r regress clinical data}
+med <- pwr_test_med
+med.torgr <- within(med, rm("bblid"))
+rownames(med.torgr) <- med$bblid
+
+
+med.rgr.cont <- apply(med.torgr[,1:12], 2, function(x) residuals.glm(glm(x ~ ageAtScan1 + 
+    sex + race2, data = sample_qa ), type = "response"))
+
+#regress out the binary variables (everything else)
+med.rgr.binary <- apply(med.torgr[,13:111], 2, function(x) residuals.glm(glm(x ~ ageAtScan1 + 
+    sex + race2, family= binomial(link="logit"),data = sample_qa ), type = "response"))
+
+med.rgr <- cbind(med.rgr.cont,med.rgr.binary)
+rownames(med.rgr) <- med$bblid
+colnames(med.rgr) <- colnames(med.torgr)
+
+
+pwr_test_med_rgr <- med.rgr
+
+save(pwr_test_med_rgr, file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_med_rgr_test_data.RData")
+```
+
+
+
+
+```{r run CCA to get original U and V}
+source('~/Desktop/BBL/projects/xiaNetworkCca/sCCA/code/cca_functions.R')
+#load train data
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_regr_data.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_med_rgr_data.RData")
+net.data <- unname(pwr.rgr.train)
+med.data <- unname(pwr_train_med_rgr)
+data.train <- list(brain = net.data, behavior = med.data)
+sCCA.train <- ccaDW(X = data.train$brain, data.train$behavior, pen_x = 0.8, pen_y = 0.4, rank = 111)
+
+#load test data
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_regr_test_data.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_med_rgr_test_data.RData")
+data.test <- list(brain = unname(pwr.rgr.test), behavior = unname(pwr_test_med_rgr))
+
+foo<-cv_score(uhat_tr = sCCA.train$u, vhat_tr = sCCA.train$v,X_ts = data.test$brain, Y_ts = data.test$behavior)
+candmod = c(1,5,6,2)
+brain_test_std <- apply(data.test$brain,2, function(x) scale(x, scale = FALSE))
+brain_test_mean <- apply(brain_test_std,2,mean)
+
+behav_hat<- (brain_test_std %*% sCCA.train$u[,candmod]) %*% ginv(sCCA.train$v[,candmod])
+#behav_hat_all<-(brain_test_std  %*% sCCA.train$u) %*% ginv(sCCA.train$v)
+behav_test_all <-  apply(data.test$behavior,2,function(x) scale(x, scale = FALSE))
+
+cv_score2 <- sum((behav_hat[,-c(1:12)]-behav_test_all[,-c(1:12)])^2)
+
+cv_score<- cancor(behav_hat,behav_test_all)
+
+#perm
+behav_all_perm <- rlply(100,behav_test_all[sample(nrow(behav_test_all)),])
+cv.perm2 <- sapply(behav_all_perm, function(x) sum((behav_hat[,-c(1:12)]-x[,-c(1:12)])^2))
+
+cv.perm <- sapply(behav_hat_perm,function(x) {out <- cancor(x, behav_test_all); out$cor})
+cv.perm <- t(cv.perm)
+length(which(cv.perm >cv_score$cor[1]))
+
+
+plot(behav_hat %*% cv_score$xcoef, data.test$behavior %*% cv_score$ycoef)
+
+
+cv <- data.frame(modenum = as.factor(1:4), cv_acc <- cv_score$cor[1:4])
+
+p.cv<-ggplot(cv,aes(modenum,cv_acc,label=round(cv_acc,2)))+ 
+  geom_bar(width=0.6,stat = 'identity', aes(fill = modenum)) +
+  scale_x_discrete(name ="Mode", limits=c(1:4)) +
+  scale_fill_manual(values = c("#8E24AA","#1E88E5","#FF6F00","#D32F2F")) +
+  scale_y_continuous(labels = percent) +
+  ylab('Validation Accuracy') +
+  coord_cartesian(ylim=c(0.2,0.7)) +
+  theme(legend.position="none")
+p.cv
+
+plotname <- paste('~/Google Drive/CEDRIC/PNC_CCA/Figure Resources/','Fig5_','CV','.pdf',sep="")
+pdf(file = plotname, width = 3, height = 2.5,useDingbats=F)
+print(p.cv)
+dev.off()
+
+
+```
+
+```{r run CCA on test to get new U and V}
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_med_rgr_test_data.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_regr_test_data.RData")
+load("~/Desktop/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_qa.RData")
+net.data <- unname(pwr.rgr.test)
+med.data <- unname(pwr_test_med_rgr)
+data.test <- list(brain = net.data, behavior = med.data)
+
+#bootstrap
+#set up the BT samples.
+bootnum <- 100
+bootid<-createResample(pwr_test_qa$overall_psychopathology_4factor, list = T, times = bootnum)
+brain_boot_test <- lapply(bootid, function(id) data.test$brain[id,])
+behavior_boot_test <- lapply(bootid, function(id) data.test$behavior[id,])
+
+
+sCCA.test <- ccaDW(X = data.test$brain, data.test$behavior, pen_x = 0.8, pen_y = 0.4, rank = 111)
+
+sCCA.test <- lapply(1:8,function(x) ccaDW(X = data.test$brain, data.test$behavior, pen_x = 0.8, pen_y = 0.4, rank = 1) )
+
+
+
+
+brain_std <- apply(data.test$brain,2,scale)
+med_std <- apply(data.test$behavior,2,scale)
+
+```
+
+```{r compair old and new loadings}
+loadings = cbind(sCCA.train$v[,c(1,5,6,2)],sCCA.test$v[,c(1,4,3,2)])
+loadings = abs(loadings)
+loadings[which(loadings<0.2)] = 0;
+train_test_cor <-cor(loadings[,1:4],loadings[,5:8])
+
+labels  =c("Dim 1","Dim 2","Dim 3","Dim 4")
+levelplot(train_test_cor,par.settings = BuRdTheme(), at = c(-0.6,-0.4,-0.2,0,0.2,0.4,0.6,0.8,1.0),
+  xlab="Discovery",ylab = "Replication", strip = F, contour = F, region= T,margin = F,
+scales=list(x=list(at= 1:4, labels=labels,tck = 0, cex = 0.75),
+            y=list(at= 1:4, labels=labels, tck = 0,cex = 0.75)))
+
+loadings = cbind(sCCA.train$u[,c(1,5,6,2)],sCCA.test$u[,c(1,4,3,2)])
+loadings = abs(loadings)
+loadings[which(loadings<0.2)] = 0;
+train_test_cor <-cor(loadings[,1:4],loadings[,5:8])
+
+labels  =c("Dim 1","Dim 2","Dim 3","Dim 4")
+levelplot(train_test_cor,par.settings = BuRdTheme(), at = c(-0.6,-0.4,-0.2,0,0.2,0.4,0.6,0.8,1.0),
+  xlab="Discovery",ylab = "Replication", strip = F, contour = F, region= T,margin = F,
+scales=list(x=list(at= 1:4, labels=labels,tck = 0, cex = 0.75),
+            y=list(at= 1:4, labels=labels, tck = 0,cex = 0.75)))
+
+brain_std_train <- apply(data.train$brain,2,scale)
+med_std_train <- apply(data.train$behavior,2,scale)
+v_test_on_train_score <- med_std_train %*% sCCA.test$v[,1]
+u_train_on_train_score <- brain_std_train %*% sCCA.train$u[,1]
+u_test_on_train_score <- brain_std_train %*% sCCA.test$u[,1]
+train_mode_seq = c(1,5,6,2)
+test_mode_seq = c(1,4,3,2)
+
+med_score_cv <-sapply(1:4, function(i) abs(cor(med_std_train %*% sCCA.train$v[,train_mode_seq[i]], med_std_train %*% sCCA.test$v[,test_mode_seg[i]])))
+
+brain_score_cv <-sapply(1:4, function(i) abs(cor(brain_std_train %*% sCCA.train$u[,train_mode_seq[i]], brain_std_train %*% sCCA.test$u[,test_mode_seg[i]])))
+
+```

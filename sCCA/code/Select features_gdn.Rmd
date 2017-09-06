@@ -11,20 +11,20 @@ knitr::opts_chunk$set(
   results = FALSE, eval = TRUE, cache = TRUE,
    fig.width = 10, fig.height = 7, tidy = TRUE
 )
-knitr::opts_knit$set(root.dir = '~/Google Drive/TDSlab/sCCA/aim1/')
 ```
   
 ```{r load data}
-load("/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/go1_train_power_ft.RData")
+load("/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/gdn_train_net_ft.RData")
+power.ft.train <- gdn_train_net_ft
 ```
 
 
 ```{r calculate covariance}
-power_mad<- apply(power.ft.train,2,function(x) round(mad(x),digits=4))
-  
+power_mad<- apply(power.ft.train,2,function(x) round(mad(x),digits=10))
+
 # ggplot2 version
 power_mad_order <- data.frame(numedge = as.factor(1:dim(power.ft.train)[2]),mad = power_mad[order(-power_mad)])
-salient_percent <- c(quantile(power_mad,c(.95,.9,.75,.5)))
+salient_percent <- c(quantile(power_mad,c(.95,.9,.75,.5),na.rm = T))
 thresh <- c(1,sapply(seq_along(salient_percent),function(i) round(mean(which(power_mad_order$mad == salient_percent[i])))), dim(power.ft.train)[2])
 
 power_mad_order$group <- as.factor(c(rep(1,thresh[2]),rep(2,thresh[3]-thresh[2]),rep(3,thresh[4]-thresh[3]),rep(4,thresh[5]-thresh[4]),rep(5,thresh[6]-thresh[5])))
@@ -49,42 +49,42 @@ p
 ```
 
 ```{r compile connectivity features and regress}
-# Take the top 10% edges
-inc_idx <- which(power_mad>=salient_percent[2])
+# Take the edges with non-zero mad
+inc_idx <- which(power_mad>=power_mad_order$mad[3400])
 inc_net <- power.ft.train[,inc_idx]
-power.ft.test[,-inc_idx] <- NA
+power.ft.train[,-inc_idx] <- NA
 
 # Compile covariates
-covariates <- read.csv("./result/201701/testsample.csv")
-covariates$sex <- as.factor(covariates$sex)
-covariates$race2 <- as.factor(covariates$race2)
+sample_qa$sex <- as.factor(sample_qa$sex)
+sample_qa$race2 <- as.factor(sample_qa$race2)
 
 # regress out covariates on the individual edges
 power.rgr <- matrix(NA, nrow = dim(inc_net)[1], ncol = dim(inc_net)[2])
-rownames(power.rgr) <- rownames(power.ft.test)
+rownames(power.rgr) <- rownames(power.ft.train)
 power.rgr <- apply(inc_net, 2, function(x) residuals.glm(glm(x ~ ageAtScan1 + 
-    sex + race2 + relMeanRMSmotion, data = covariates ), type = "response"))
+    sex + race2 + restRelMeanRMSMotion, data = sample_qa), type = "response"))
 
 # PCA-on these data
 power.rgr.pca <-prcomp(power.rgr, center = FALSE)
 
-save(power.rgr.pca.train,power.rgr.pca.test,power.rgr.train,power.rgr.test,file='./result/201701/power_regr_data.RData')
-
+gdn.rgr.train <- power.rgr
+gdn.rgr.pca.train <- power.rgr.pca
+save(gdn.rgr.pca.train,gdn.rgr.train,file='./result/201701/gdn_regr_data.RData')
 ```
 
 ```{r regress clinical features and regress}
-load("/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/med_cv_split.RData")
-med <- med.test
+load("/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/gdn_train_med.RData")
+med <- gdn_train_med
 med.torgr <- within(med, rm("bblid"))
 rownames(med.torgr) <- med$bblid
 #plot(skewness(med.torgr),main='Sknewness Analysis of Raw Clinical Features',xlab='Psychiatric Symptoms',ylab='Skewness')
 #regress out the continous variables (SIPs)
 
 med.rgr.cont <- apply(med.torgr[,1:12], 2, function(x) residuals.glm(glm(x ~ ageAtScan1 + 
-    sex + race2, data = covariates ), type = "response"))
+    sex + race2, data = sample_qa ), type = "response"))
 #regress out the binary variables (everything else)
 med.rgr.binary <- apply(med.torgr[,13:111], 2, function(x) residuals.glm(glm(x ~ ageAtScan1 + 
-    sex + race2, family= binomial(link="logit"),data = covariates ), type = "response"))
+    sex + race2, family= binomial(link="logit"),data = sample_qa ), type = "response"))
 
 med.rgr <- cbind(med.rgr.cont,med.rgr.binary)
 rownames(med.rgr) <- med$bblid
@@ -92,13 +92,15 @@ colnames(med.rgr) <- colnames(med.torgr)
 
 plot(skewness(med.rgr),main='Skewness Analysis of Regressed Clinical Features',xlab='Psychiatric Symptoms',ylab='Skewness')
 
-save(med.rgr.train,med.rgr.test, file = "./result/201701/med_rgr_data.RData")
+gdn_train_med_rgr <- med.rgr
+
+save(gdn_train_med_rgr, file = "./result/201701/gdn_med_rgr_data.RData")
 
 ```
 
 ```{r visulize which features}
-power.data <- power.ft.test
-power.cln.aj <- array(NA, c(264,264,dim(power.data)[1]))
+power.data <- power.ft.train
+power.cln.aj <- array(NA, c(333,333,dim(power.data)[1]))
 for (i in 1:dim(power.data)[1]) {
   tempmax <- power.cln.aj[ , ,i]
   tempmax[upper.tri(tempmax,diag=F)] <- as.numeric(power.data[i,])
@@ -108,9 +110,14 @@ for (i in 1:dim(power.data)[1]) {
 }
 
 power.cln.ave <- apply(power.cln.aj, c(1,2), function(x) mean(na.omit(x)))
-levelplot(power.cln.ave, at = seq(-0.5,0.5,length=10),par.settings = BuRdTheme(),xlab='',ylab='',main="Test Set")
 
-save(power.3k.ave.train,power.3k.ave.test,power.3k.train,power.3k.test,power.train.inc.idx,power.test.inc.idx,file ="./result/201701/power_3k_raw.RData")
+levelplot(gdn.3k.train.ave, at = seq(-0.5,0.5,length=10),par.settings = BuRdTheme(),xlab='',ylab='',main="Gordon Train Set")
+
+gdn.3k.train.ave <- power.cln.ave
+gdn.3k.train.ave <- gdn.3k.train.ave[parcelshem$ParcelID,parcelshem$ParcelID]
+
+gdn.3k.train.idx <- inc_idx
+save(gdn.3k.train.ave,gdn.3k.train.idx,file ="./result/201701/gdn_3k_stats.RData")
 ```
 
 

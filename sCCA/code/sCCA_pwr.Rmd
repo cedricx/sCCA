@@ -1,0 +1,355 @@
+---
+title: "sCCA_pwr"
+output: html_notebook
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = '/Users/hxia/Desktop/BBL/')
+require('PMA')
+require('Matrix')
+require('parallel')
+require('emdbook')
+require('caret')
+require('R.matlab')
+require('MASS')
+require('permute')
+require('matrixStats')
+require('scales')
+require('cowplot')
+require('ggplot2')
+require('ggrepel')
+require('rasterVis')
+#source('~/Desktop/BBL/projects/xiaNetworkCca/sCCA/code/cca_functions.R')
+```
+
+```{r load data}
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_regr_mo_ra_data.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_med_rgr_ra_data.RData")
+
+net.data <- unname(pwr.rgr.train)
+med.data <- unname(pwr_train_med_rgr)
+data <- list(brain = net.data, behavior = med.data)
+print(paste("Training sample has",dim(net.data)[1],"subjects."))
+print(paste("rsFC data has",dim(net.data)[2],"edges."))
+print(paste("clinical data has",dim(med.data)[2],"items."))
+```
+
+```{r create sub-training splits for CV}
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_train_qa.RData")
+subjid <- pwr_train_qa
+
+# create 3 fold CV sets 10 times in the sub-training set
+
+trainid <- createDataPartition(subjid$overall_psychopathology_4factor, p = 0.667, list =T,times=10)
+
+brain_train <- mclapply(trainid, function(id) data$brain[id,])
+brain_test <- mclapply(trainid, function(id) data$brain[-id,])
+
+behavior_train <- mclapply(trainid, function(id) data$behavior[id,])
+behavior_test <- mclapply(trainid, function(id) data$behavior[-id,])
+```
+
+```{r select best parameters}
+x_pen <- seq(0.1,1,length.out=10)
+y_pen <- seq(0.1,1,length.out=10)
+
+p3Km111.gs<-ccaDWfoldgs(brain_train,behavior_train,x_pen,y_pen)
+gs.mat <- matrix(p3Km111.gs$GS[,'COR_MEAN'], nrow = 10, ncol = 10)
+rownames(gs.mat) <- x_pen
+colnames(gs.mat) <- y_pen
+image(gs.mat)
+
+```
+
+```{r run sCCA on all data }
+modenum <- dim(data$behavior)[2]
+p3Km111.org <- ccaDW(data$brain, data$behavior,0.8,0.4,modenum)
+```
+
+```{r select components based on covariance matrix}
+brain_std <- apply(data$brain,2,scale)
+med_std <- apply(data$behavior,2,scale)
+covmat <- t(p3Km111.org$u) %*% t(brain_std) %*% med_std %*% p3Km111.org$v
+varE <- diag(covmat)^2 / sum(diag(covmat)^2)
+varE.df <- data.frame(modenum = as.factor(1:modenum), var = varE)
+candnum = 4
+
+p.var<-ggplot(varE.df,aes(modenum,var)) +
+  geom_point(stat = 'identity',aes(color = var > varE[candnum+1], size = var)) +
+  geom_hline(yintercept = 1/modenum,linetype="dashed") +
+  scale_x_discrete(name ="Mode", limits=c(0:modenum),breaks =  c(1,seq(10,modenum,10))) +
+  scale_y_continuous(expand = c(0, 0),limits=c(0,0.075),labels = percent,name = "Variance Explained", breaks=seq(0,0.075,length=4)) +
+  theme_classic(base_size = 20) +
+  theme(legend.position = 'none') 
+
+p.var
+```
+
+```{r run sCCA on all data with candidate modes }
+candnum <- 7
+p3Km111.cand <- ccaDW(data$brain, data$behavior,0.8,0.4,candnum)
+```
+
+```{r run sCCA on the sub-training splits}
+p3Km111.cca<-mclapply(seq_along(trainid),function(i) ccaDW(brain_train[[i]],behavior_train[[i]],0.8,0.4,20))
+p3Km111.cca.ro <- sapply(p3Km111.cca,function(x) reorderCCA(x,p3Km111.cand,20))
+p3Km111.cca.cor <- rowMeans(simplify2array(p3Km111.cca.ro['cors',]),na.rm =T)
+p3Km111.cca.cor.se <- rowSds(simplify2array(p3Km111.cca.ro['cors',]),na.rm =T)/sqrt(dim(p3Km111.cca.ro)[2])
+```
+
+
+```{r plot correlation}
+cor.df <- data.frame(modenum = as.factor(1:candnum), cor = p3Km111.cca.cor, se = p3Km111.cca.cor.se)
+cor.df.order <- cor.df[order(-cor.df$cor),]
+cor.lim <- aes(ymax = cor.df.order$cor + cor.df$se, ymin = cor.df.order$cor - cor.df$se)
+p.cor <- ggplot(cor.df.order,aes(1:length(modenum), cor, label = round(cor,2))) +
+  geom_bar(width = 0.75, stat = 'identity',  fill = '#00BFA5') +
+  geom_errorbar(cor.lim,  width=0.25) +
+  geom_text(size = 4, position = position_dodge(width = 0.9), vjust= -1,color='grey')+
+  scale_x_discrete(name ="Mode", limits=c(1:candnum) ) +
+  scale_y_continuous(expand = c(0, 0),limits=c(0,0.8),name = "CCA Correlation", breaks=seq(0,0.8,length=5)) +
+  theme_classic(base_size = 20) +
+  coord_cartesian(ylim=c(0.2,0.9)) +
+  theme(legend.position = 'none') 
+p.cor
+
+```
+
+```{r permutation test}
+num.perm = 1000
+behavior.perm <- rlply(num.perm,data$behavior[sample(nrow(data$behavior)),])
+p3Km111.perm.cca<-sapply(behavior.perm, function(y_perm){ out<-ccaDWpermorder(data$brain,y_perm,0.8,0.4,candnum,p3Km111.cand)} )
+#load("~/Desktop/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_perm_cca.RData")
+perm.cor <- simplify2array(p3Km111.perm.cca['cors',])
+perm.pval <- sapply(seq_along(cor.df$cor),function(x) (length(which(perm.cor[x,] >= cor.df$cor[x])) ) / length(which(is.na(perm.cor[x,]) == FALSE)))
+```
+
+```{r plot the permutation results}
+perm.cor.df=as.data.frame(t(perm.cor))
+perm.pass <- which(perm.pval < 0.05)
+permplots <-lapply(perm.pass,function(x) perm.plot(perm.cor.df,cor.df,perm.pval,x))
+permplots
+```
+
+
+```{r bootstrap}
+#load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/p3Km111_boot1000.RData")
+
+load('./projects/xiaNetworkCca/sCCA/aim1/result/201701/p3Km111_noreg_boot1.RData')
+load('./projects/xiaNetworkCca/sCCA/aim1/result/201701/p3Km111_noreg_boot2.RData')
+p3Km111.boot <- append(p3km111.noreg.boot1,p3km111.noreg.boot2)
+
+bootnum = 1000
+p3Km111.boot.ro<- lapply(1:bootnum,function(i) reorderCCA(p3Km111.boot[[i]],p3Km111.cand,10))
+p3Km111.boot.u <- lapply(perm.pass, function(x) sapply(1:bootnum, function(i) p3Km111.boot.ro[[i]]$u[,x]))
+p3Km111.boot.v <- lapply(perm.pass, function(x) sapply(1:bootnum, function(i) p3Km111.boot.ro[[i]]$v[,x]))
+#p3Km111.boot.cor <-  sapply(1:1000, function(i) p3Km111.boot.ro[[i]]$cor)
+
+u.boot.plot <- lapply(seq_along(perm.pass), function(x) bootplot_u(p3Km111.cand$u[,perm.pass[x]], p3Km111.boot.u[[x]] ))
+v.boot.plot <- lapply(seq_along(perm.pass), function(x) bootplot(p3Km111.cand$v[,perm.pass[x]], p3Km111.boot.v[[x]] ))
+
+```
+
+
+```{r med vis, fig.height=3.5, fig.width=4}
+load("./projects/xiaNetworkCca/sCCA/aim1/data/med_item_annotation.RData")
+dim.match <- sapply(seq_along(1:length(perm.pass)), function(x) which(perm.pass == cor.df.order$modenum[x]))
+#med.plots <- lapply(seq_along(1:length(dim.match)), function(x) med_vis(v.boot.plot[[dim.match[x]]], paste("Mode",x)))
+med.plots.nt <- lapply(seq_along(1:length(dim.match)), function(x) med_vis(v.boot.plot[[dim.match[x]]], ""))
+med.plots.grid<-plot_grid(plotlist = med.plots.nt,labels = c("A","B","C","D"))
+save_plot("./projects/xiaNetworkCca/sCCA/aim1/figure/201701/med_plots_norgr.pdf",med.plots.grid,base_height = 14,base_aspect_ratio = 1.3)
+```
+
+```{r brain dimension}
+sign.match <- sign(colMeans(sign(p3Km111.cand$v[,perm.pass[dim.match]])))
+brain.plots <- lapply(seq_along(1:length(dim.match)), function(x) brain_vis(u.boot.plot[[dim.match[x]]] ,paste("Dimension",x),sign.match[x],pwr.3k.train.idx,parcelsTR)   )
+#load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_train_masks.RData")
+
+#mad_mask_mat <- health_age_rgr_mask$ave_mat
+
+#br.by.ft <- lapply(seq_along(brain.plots), function(x) load_by_ft_plot(brain.plots[[x]]$mat,mad_mask_mat,paste("Dimension",x)))
+```
+
+```{r standardize brain loadings}
+#ubyx_std
+u<-brain.plots[[1]]$mat
+xbystd <- lapply(1:dim(brain_std)[1], function(i) { out<-mask_mat_ind(brain_std[i,]); out$mat * u})
+xbystd_all <- do.call(abind,c(xbystd, along = 3))
+xbystd_mean <- apply(xbystd_all, c(1,2), mean)
+
+#original feature
+load('./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_train_net_ft.RData')
+orgft <- pwr_train_net_ft[,pwr.3k.train.idx]
+orgftmat <- lapply(1:dim(pwr_train_net_ft)[1], function(i) { out<-mask_mat_ind(orgft[i,]); out$mat })
+orgft_all <- do.call(abind,c(orgftmat, along = 3))
+
+#original feature standarized
+orgft_std <- apply(orgft,2,scale)
+orgftmatstd <- lapply(1:dim(pwr_train_net_ft)[1], function(i) { out<-mask_mat_ind(orgft_std[i,]); out$mat })
+orgft_all_std <- do.call(abind,c(orgftmatstd, along = 3))
+
+#estimate_std
+brain_std_mat <- lapply(1:dim(brain_std)[1], function(i) { out<-mask_mat_ind(brain_std[i,]); out$mat })
+brain_std_mat <- do.call(abind,c(brain_std_mat, along = 3))
+est_std <- orgft_all_std- brain_std_mat
+
+#percentage changed
+delta_pt <- xbystd_all / est_std
+delta_pt[-which(delta_pt<1 & delta_pt>-1)] <- NA
+delta_pt_mean <- apply(delta_pt,c(1,2), mean)
+
+#clincail score
+vscore <- med_std %*% -p3Km111.cand$v[,1]
+
+delta_pt_sick <- apply(delta_pt[,,which(vscore >= 0)],c(1,2), mean)
+delta_pt_hx <- apply(delta_pt[,,which(vscore < 0)],c(1,2), mean)
+
+```
+
+
+
+```{r modules}
+#get the average residual
+res.mat <- mask_mat(net.data)
+#get average edge weight
+ft_mat <-  mask_mat(pwr_train_net_ft[,pwr.3k.train.idx])
+
+#standarized loadings by the change of 
+br.signed <- lapply(seq_along(brain.plots), function(x) load_norm(brain.plots[[x]],ft_mat,res.mat,paste("Dimension",x)))
+br.signed.org.order <- lapply(br.signed, function(x) {dimmat <- x$mat[order(parcelsTR$ROI),order(parcelsTR$ROI)]; dimmat[is.na(dimmat)] = 0; dimmat})
+writeMat('~/Desktop/brain_load_nm.mat',dim1 = br.signed.org.order[[1]],
+                                      dim2 = br.signed.org.order[[2]],
+                                      dim3 = br.signed.org.order[[3]],
+                                      dim4 = br.signed.org.order[[4]])
+#merge the communities
+parcelsTR[which(parcelsTR$Community==6),'Community'] <- 5 #merge memory to default mode
+parcelsTR[which(parcelsTR$Community==2),'Community'] <- 1 #merge mouth  to hand
+
+parcelsTR[which(parcelsTR$Community==3),'Community'] <- 2
+parcelsTR[which(parcelsTR$Community==4),'Community'] <- 3
+parcelsTR[which(parcelsTR$Community==5),'Community'] <- 4
+parcelsTR[which(parcelsTR$Community==7),'Community'] <- 5
+parcelsTR[which(parcelsTR$Community==8),'Community'] <- 6
+parcelsTR[which(parcelsTR$Community==9),'Community'] <- 7
+parcelsTR[which(parcelsTR$Community==10),'Community'] <- 8
+parcelsTR[which(parcelsTR$Community==11),'Community'] <- 9
+parcelsTR[which(parcelsTR$Community==12),'Community'] <- 10
+parcelsTR[which(parcelsTR$Community==13),'Community'] <- 11
+parcelsTR[which(parcelsTR$System == 'Memory retrieval?'),'System'] <- 'Default mode'
+parcelsTR[which(parcelsTR$System == 'Sensory/somatomotor Mouth'),'System'] <- 'Sensory/somatomotor Hand'
+
+#calculate within-system connectivity
+br.signed.org <- br.signed
+
+matmod <- mod_rich_within(ft_mat$ave_mat)
+netmod <- lapply(br.signed, function(x) mod_rich_within(x$mat))
+
+matmod_sig_idx <- which(p.adjust(matmod$PVAL,method = "fdr") < 0.05)
+matmod_sig <- unique(parcelsTR$System)[matmod_sig_idx]
+
+netmod_sig <- lapply(netmod, function(x) matmod_sig[which(p.adjust(x$PVAL[matmod_sig_idx],method = "fdr")< 0.05 )])
+#netmod_sig <- lapply(netmod, function(x) which(p.adjust(x$PVAL[matmod_sig_idx],method = "fdr")< 0.05 )])
+
+netmod_sig_idx <- lapply(netmod_sig, function(x)  unique(parcelsTR$Community[which(parcelsTR$System == x)]) +1 )
+
+# plot module after MAD
+modname <- c("UNK","SMT","COP","AUD","DMN","VIS","FPT","SAL","SBC","VAT","DAT","CRB")
+mad_mod_plot <- lapply(as.list(matmod_sig_idx),function(x) within_mod_plot(ft_mat$ave_mat,x))
+mad_mod_calc <- sapply(as.list(matmod_sig_idx),function(x) within_mod_calc(ft_mat$ave_mat,x))
+
+# plot module for each dimension
+dim_mod_plot <- lapply(1:4,function(dim) lapply(as.list(netmod_sig_idx[[dim]]),function(mod) within_mod_plot(br.signed[[dim]]$mat,mod)))
+
+dim_mod_calc <- lapply(1:4,function(dim) sapply(as.list(netmod_sig_idx[[dim]]),function(mod) within_mod_calc(br.signed[[dim]]$mat,mod)))
+
+
+# between_mod
+between_name <- mod_calc_between_name(unique(parcelsTR$System))
+matmod_bt <- mod_rich_between(ft_mat$ave_mat)
+
+
+netmod_bt <- lapply(br.signed, function(x) mod_rich_between(x$mat) )
+
+netmod_bt_MOD <- lapply(netmod_bt, function(x) matmod_bt$MOD[which(p.adjust(x$PVAL[matmod_bt$MODid], method = 'fdr') < 0.05)])
+
+netmod_bt_MODid <- lapply(netmod_bt, function(x) matmod_bt$MODid[which(p.adjust(x$PVAL[matmod_bt$MODid], method = 'fdr') < 0.05)] )
+
+#combine everything back
+netmod_bt<- lapply(seq_along(netmod_bt),function(i) { netmod_bt[[i]]$MOD <- netmod_bt_MOD[[i]]; netmod_bt[[i]]$MODid <- netmod_bt_MODid[[i]];netmod_bt[[i]]})
+
+mad_bt_mod_edge_plot <- between_mod_load_plot(matmod_bt,mad_mod_calc,"MAD Mask")
+lattice.options(axis.padding=list(factor=0.5))
+dimension_names = c("Psychosis","Anxious-Misery","Fear","Externalizing Behavior")
+dim_bt_mod_plot <- lapply(seq_along(1:4), function(i) between_mod_load_plot(netmod_bt[[i]],dim_mod_calc[[i]],dimension_names[i],i))
+dim_bt_mod_plot
+#save the plots
+for (i in 1:4) {
+  plotname <- paste('~/Google Drive/CEDRIC/PNC_CCA/Figure Resources/','Fig11_','sys_plot',i,'.pdf',sep="")
+  pdf(file = plotname, width = 5, height = 5)
+  print(dim_bt_mod_plot[[i]]$plot)
+  dev.off()
+}
+
+```
+
+```{calculate consensus for systems}
+
+```
+
+```{r}
+function(net_ft) {
+  mat <- array(0,c(264,264,dim(net_ft)[1]))
+  
+  mat[upper.tri(mat,diag=F)][pwr.3k.train.idx] <- sample_net_ave
+  
+  ave_mat <- sna::symmetrize(ave_mat,rule = "upper")
+  ave_mat <- ave_mat[parcelsTR$ROI,parcelsTR$ROI]
+}
+
+writeMat('~/Desktop/pwr_org.mat',pwr_train_mat = pwr_train_net)
+
+ft_mat_b1 <- pwr_train_net_ft[,pwr.3k.train.idx]
+ft_mat_b1[,-u.boot.plot[[1]]$fea] <- 0
+
+ft_mat_b2 <- pwr_train_net_ft[,pwr.3k.train.idx]
+ft_mat_b2[,-u.boot.plot[[2]]$fea] <- 0
+
+ft_mat_b3 <- pwr_train_net_ft[,pwr.3k.train.idx]
+ft_mat_b3[,-u.boot.plot[[3]]$fea] <- 0
+
+ft_mat_b4 <- pwr_train_net_ft[,pwr.3k.train.idx]
+ft_mat_b4[,-u.boot.plot[[4]]$fea] <- 0
+
+writeMat('~/Desktop/brain.mat', brain0 = ft_mat$ave_mat, brain1 = ft_mat_dim1$ave_mat,brain2 = ft_mat_dim2$ave_mat,brain3 = ft_mat_dim3$ave_mat,brain4 = ft_mat_dim4$ave_mat)
+
+ft_mat_b2 <- pwr_train_net_ft[,pwr.3k.train.idx][u.boot.plot[[2]]$fea]
+ft_mat_b3 <- pwr_train_net_ft[,pwr.3k.train.idx][u.boot.plot[[3]]$fea]
+ft_mat_b4 <- pwr_train_net_ft[,pwr.3k.train.idx][u.boot.plot[[4]]$fea]
+
+sCCAgraph<-readMat('~/Desktop/sCCAgraph.mat')
+plot_degree <-function(i) {
+dg_df <-data.frame(real = sCCAgraph$dg.sort[,i], perm_mean = sCCAgraph$braindgperm.mean[,i], perm_sd = sCCAgraph$braindgperm.sd[,i])
+ggplot(dg_df, aes(1:264,perm_mean)) + 
+  geom_line(color = "blue") +
+  geom_ribbon(aes(ymin = perm_mean-3*perm_sd, ymax = perm_mean + 3*perm_sd), fill = 'blue', alpha = 0.2) +
+  geom_line(aes(1:264,dg_df$real),color = "red") +
+  labs(y = "Node Degree", x= "Node")
+}
+dg_plots <-lapply(1:5, plot_degree)
+
+sig_dg_id <- sCCAgraph$sortid[220:264,]
+sig_dg_vl <- sCCAgraph$sortdg[220:264,]
+
+#sig_dg_id_sort <- apply(sig_dg_id,2,sort)
+
+sig_dg_10 <-lapply(1:5,function(x) parcelsTR[sig_dg_id[45:36,x],])
+ 
+lapply(seq_along(sig_dg_10),function(i) write.table(cbind(sig_dg_10[[i]][,c(2,3,4,5)],sig_dg_vl[45:36,i],sig_dg_10[[i]][,7]), file = paste( '~/Desktop/sig_node_dg_',i,'.node',sep=""),col.names=FALSE,row.names=FALSE,quote=FALSE))
+
+cbind(sig_dg_10[[i]][,c(2,3,4,5,6)],)
+```
+
+
+
+
+

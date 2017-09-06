@@ -1,0 +1,106 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r setup}
+knitr::opts_knit$set(root.dir = '/Users/hxia/Desktop/BBL/')
+require("rasterVis")
+require('PMA')
+require('Matrix')
+require('parallel')
+require('emdbook')
+require('caret')
+require('R.matlab')
+require('MASS')
+require('permute')
+require('matrixStats')
+require('scales')
+require('ggrepel')
+require('cowplot')
+require('VIM')
+require('mice')
+require('abind')
+source('~/Desktop/BBL/projects/xiaNetworkCca/sCCA/code/cca_functions.R')
+```
+
+```{r}
+STAI <-read.csv("~/Desktop/BBL/studies/pnc/n1601_dataFreezeDec2016/clinical/n1601_stai_pre_post_itemwise_smry_factors_20170131.csv",stringsAsFactors=FALSE)
+STAI <-apply(STAI,2,as.numeric)
+pre1 <- STAI[,5:(5+20-1)]
+pre1_sum<-rowSums(pre1)
+pre2 <- STAI[,(5+20):(5+40-1)]
+pre2_sum<-rowSums(pre2,na.rm=T)
+plot(pre1_sum,STAI[,3])
+plot(pre2_sum,STAI[,4])
+
+trait <-pre2
+trait_sum <- pre2_sum
+trait_miss <- aggr(trait)
+trait_inc <- trait[-which(pre2_sum ==0),]
+trait_inc_miss <- aggr(trait_inc)
+ 
+
+numImp <- 15
+trait.inc.imp <- mice(trait_inc, m = numImp, maxit = 20, method= "pmm",visitSequence = 'monotone',printFlag = FALSE)
+
+trait.cpl.rm<-lapply(1:numImp,function(x) complete(trait.inc.imp,action = x))
+trait.cpl.rm.out<-do.call(abind, c(trait.cpl.rm, along = 3))
+trait.cpl.rm.out.mean<-apply(trait.cpl.rm.out, c(1,2), mean)
+trait.cpl.rm.out.round <- round(trait.cpl.rm.out.mean)
+
+trait.final <- cbind(bblid = STAI[-which(pre2_sum ==0),1],trait.cpl.rm.out.round)
+trait.final <- as.data.frame(trait.final)
+
+save(trait_miss,trait.final,trait.inc.imp, trait_inc,file = './projects/xiaNetworkCca/sCCA/aim1/result/201701/trait_impute.RData')
+```
+
+```{r}
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_train_qa.RData")
+trait.final.train <-subset(trait.final,bblid %in% pwr_train_qa$bblid)
+trait.bblid.inc <- pwr_train_qa$bblid %in% trait.final.train$bblid
+sample_qa <- subset(pwr_train_qa, bblid %in% trait.final.train$bblid)
+
+
+
+load("~/Desktop/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/med_cv_split.RData")
+med.trait <- subset(med.train, bblid %in% pwr_train_qa$bblid)
+med.trait <- med.trait[\gg,]
+
+med.n.trait <- cbind(med.trait,within(trait.final.train,rm("bblid")))
+
+#only get the ones older than 11 years old
+med.n.trait <- subset(med.n.trait, sample_qa$ageAtScan1 >= 11*12)
+
+sample_qa <- subset(sample_qa, ageAtScan1 >= 11*12)
+
+sample_qa$sex <- as.factor(sample_qa$sex)
+sample_qa$race2 <- as.factor(sample_qa$race2)
+
+med.n.trait.torgr <- within(med.n.trait, rm("bblid"))
+rownames(med.n.trait.torgr) <- med.n.trait$bblid
+
+med.n.trait.rgr.con <- apply(med.n.trait.torgr[,c(1:12,112:131)], 2, function(x) residuals.glm(glm(x ~ ageAtScan1 + 
+    sex + race2, data = sample_qa ), type = "response"))
+#regress out the binary variables (everything else)
+med.n.trait.rgr.binary <- apply(med.n.trait.torgr[,13:111], 2, function(x) residuals.glm(glm(x ~ ageAtScan1 + 
+    sex + race2, family= binomial(link="logit"),data = sample_qa ), type = "response"))
+
+
+med.n.trait.rgr <- cbind(med.n.trait.rgr.con[,1:12],med.n.trait.rgr.binary,med.n.trait.rgr.con[,13:32])
+rownames(med.n.trait.rgr) <- sample_qa$bblid
+
+save(med.n.trait.rgr,file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_med_n_trait_rgr.RData")
+save(sample_qa, file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_trait_qa.RData")
+```
+
+```{r}
+load("~/Desktop/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_train_net_ft.RData")
+load('./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_3k_stats.RData')
+pwr_train_net_ft <- subset(pwr_train_net_ft, rownames(pwr_train_net_ft) %in% sample_qa$bblid)
+pwr_trait_net_ft <- pwr_train_net_ft[,pwr.3k.train.idx]
+
+power.trait.rgr <- apply(pwr_trait_net_ft, 2, function(x) residuals.glm(glm(x ~ ageAtScan1 + 
+    sex + race2 + restRelMeanRMSMotion, data = sample_qa), type = "response"))
+rownames(power.trait.rgr) <- sample_qa$bblid
+save(power.trait.rgr,file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_net_n_trait_rgr.RData")
+```

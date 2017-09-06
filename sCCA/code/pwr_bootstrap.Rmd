@@ -1,0 +1,239 @@
+---
+title: "Bootstrap sCCA results"
+output: html_notebook
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = '/Users/hxia/Desktop/BBL/')
+require("rasterVis")
+require('PMA')
+require('Matrix')
+require('parallel')
+require('emdbook')
+require('caret')
+require('R.matlab')
+require('MASS')
+require('permute')
+require('matrixStats')
+require('scales')
+require('ggrepel')
+require('cowplot')
+source('~/Desktop/BBL/projects/xiaNetworkCca/sCCA/code/cca_functions.R')
+source('./code/cca_functions.R')
+```
+
+```{r load sCCA results}
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_cca.RData")
+```
+
+
+```{r bootstrap}
+
+#set up the BT samples.
+bootnum <- 500
+bootid<-createResample(subjid$overall_psychopathology_4factor, list = T, times = bootnum)
+brain_boot <- lapply(bootid, function(id) data$brain[id,])
+behavior_boot <- lapply(bootid, function(id) data$behavior[id,])
+
+#
+#p3Km111.org<-ccaDW(data$brain,data$behavior,0.8,0.4,10)
+#save(p3Km111.org, file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_p3Km111_org.RData")
+
+p3Km111.boot<- mclapply(seq_along(bootid),function(i) ccaDW(brain_boot[[i]],behavior_boot[[i]],0.8,0.4,10),mc.cores = 5)
+
+load("~/Desktop/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/p3Km111_boot501.RData")
+p3Km111.boot1 <- p3Km111.boot
+load("~/Desktop/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/p3Km111_boot502.RData")
+p3Km111.boot2 <- p3Km111.boot
+p3Km111.boot <- append(p3Km111.boot1,p3Km111.boot2)
+save(p3Km111.boot, file = "~/Desktop/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/p3Km111_boot1000.RData")
+```
+
+```{r load processed data}
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_p3Km111_org.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/p3Km111_boot1000.RData")
+```
+
+```{r compute confidence interval}
+bootnum = 1000
+p3Km111.boot.ro<- lapply(1:bootnum,function(i) reorderCCA(p3Km111.boot[[i]],p3Km111.org,10) )
+
+p3Km111.boot.u <- list(u1 =  sapply(1:bootnum, function(i) p3Km111.boot.ro[[i]]$u[,1]),
+                       u2 =  sapply(1:bootnum, function(i) p3Km111.boot.ro[[i]]$u[,2]),
+                       u3 =  sapply(1:bootnum, function(i) p3Km111.boot.ro[[i]]$u[,3]))
+p3Km111.boot.v <- list(v1 =  sapply(1:bootnum, function(i) p3Km111.boot.ro[[i]]$v[,1]),
+                       v2 =  sapply(1:bootnum, function(i) p3Km111.boot.ro[[i]]$v[,2]),
+                       v3 =  sapply(1:bootnum, function(i) p3Km111.boot.ro[[i]]$v[,3]))
+p3Km111.boot.cor <-  sapply(1:1000, function(i) p3Km111.boot.ro[[i]]$cor)
+
+save(list= ls(pattern = "p3Km111.boot*"), file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_boot.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_boot.RData")
+
+u1.plot <- bootplot_u(p3Km111.org$u[,1],p3Km111.boot.u$u1)
+u2.plot <- bootplot_u(p3Km111.org$u[,2],p3Km111.boot.u$u2)
+u3.plot <- bootplot_u(p3Km111.org$u[,3],p3Km111.boot.u$u3)
+
+v1.plot <- bootplot(p3Km111.org$v[,1],p3Km111.boot.v$v1)
+v2.plot <- bootplot(p3Km111.org$v[,2],p3Km111.boot.v$v2)
+v3.plot <- bootplot(p3Km111.org$v[,3],p3Km111.boot.v$v3)
+
+ls(pattern="*.plot")
+save(list = ls(pattern="*.plot"), file ="./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_final_loadings.RData")
+```
+
+```{r organize item questions }
+#load('./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_med_rgr_data.RData')
+#item<-read.csv('./studies/pnc/n1601_dataFreezeDec2016/clinical/annotation112item_hxia.csv')
+#load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_final_loadings.RData")
+#colnames(pwr_train_med_rgr) <- toupper(colnames(pwr_train_med_rgr))
+#item <- item[match(colnames(pwr_train_med_rgr),item$clinicalcode),]
+#save(item, file = "./projects/xiaNetworkCca/sCCA/aim1/data/med_item_annotation.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/data/med_item_annotation.RData")
+STAI.label<- read.csv("./studies/pnc/n1601_dataFreezeDec2016/cnb/STAI_pre_traits_xia.csv")
+colnames(STAI.label) <- colnames(item)
+item_n_trait <- rbind(item,STAI.label)
+save(item_n_trait, file = "./projects/xiaNetworkCca/sCCA/aim1/data/med_trait_item_annotation.RData")
+
+#purple colors
+item$color[which(item$cate == 'PSY')] <- "#7B1FA2"  #violet
+item$color[which(item$cate == 'SIP')] <- "#BA68C8" #lilac
+
+#blue colors
+item$color[which(item$cate == 'SUI')] <- "#0D47A1" #Blue
+item$color[which(item$cate == 'DEP')] <- "#1E88E5" #Cerulean
+item$color[which(item$cate == 'MAN')] <- "#00BCD4" #Sapphire
+item$color[which(item$cate == 'SCR')] <- "#4FC3F7" #Sky
+
+#red colors
+item$color[which(item$cate == 'ADD')] <- "#D50000" #Fire
+item$color[which(item$cate == 'ODD')] <- "#D81B60" #Strawberry
+item$color[which(item$cate == 'CDD')] <- "#FF5252" #Punch
+
+#yellow colors
+item$color[which(item$cate == 'AGR')] <- "#FCB64E" #Bumblebee
+item$color[which(item$cate == 'SOC')] <- "#FF8F00" #Honey
+item$color[which(item$cate == 'PHB')] <- "#A9822D" #Apricot
+
+#green colors
+item$color[which(item$cate == 'OCD')] <- "#205F30" #Lime
+item$color[which(item$cate == 'SEP')] <- "#1DE9B6" #Seafoam
+item$color[which(item$cate == 'PTD')] <- "#81C784" #Basil
+item$color[which(item$cate == 'GAD')] <- "#009688" #Teal
+item$color[which(item$cate == 'PAN')] <- "#7CB342" #Pear
+
+```
+
+```{r visualize clinical items}
+med_vis(v1.plot,"Dimension 1")
+med_vis(v2.plot,"Dimension 2")
+med_vis(v3.plot,"Dimension 3")
+```
+
+```{r visualize brain dimension, fig.height=8, fig.width=8}
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_parcels.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_3k_stats.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_train_net_ft.RData")
+```
+
+```{r }
+brain1 <- brain_vis(u1.plot,"Dimension 1",-1,pwr.3k.train.idx,parcelsTR)
+brain2 <- brain_vis(u2.plot,"Dimension 2",-1,pwr.3k.train.idx,parcelsTR)
+brain3 <- brain_vis(u3.plot,"Dimension 3",+1,pwr.3k.train.idx,parcelsTR)
+```
+
+```{r}
+mask_mat <- all_train_mask$ave_mat
+
+br.by.ft1 <- load_by_ft_plot(brain1$mat,mask_mat)
+br.by.ft2 <- load_by_ft_plot(brain2$mat,mask_mat)
+br.by.ft3 <- load_by_ft_plot(brain3$mat,mask_mat)
+
+matmod <- mod_rich_within(mask_mat)
+netmod1<-mod_rich_within(br.by.ft1$mat)
+netmod2<-mod_rich_within(br.by.ft2$mat)
+netmod3<-mod_rich_within(br.by.ft3$mat)
+
+matmod_sig_idx <- which(p.adjust(matmod$PVAL,method = "fdr") < 0.05)
+matmod_sig <- unique(parcelsTR$System)[matmod_sig_idx]
+
+netmod1_sig <- matmod_sig[which(p.adjust(netmod1$PVAL[matmod_sig_idx],method = "fdr")< 0.05 )]
+netmod1_sig_idx <- unique(parcelsTR$Community[which(parcelsTR$System == netmod1_sig)]) +1
+
+netmod2_sig <- matmod_sig[which(p.adjust(netmod2$PVAL[matmod_sig_idx],method = "fdr")< 0.05 )]
+netmod2_sig_idx <- unique(parcelsTR$Community[which(parcelsTR$System == netmod2_sig)]) +1
+
+netmod3_sig <- matmod_sig[which(p.adjust(netmod3$PVAL[matmod_sig_idx],method = "fdr")< 0.05 )]
+netmod3_sig_idx <- unique(parcelsTR$Community[which(parcelsTR$System == netmod3_sig)]) +1
+
+#mod_size <- sapply(c(-1,1:13),function(x) length(which(parcelsTR$Community == x)))
+#mod_size[order(-mod_size)]
+#unique(parcelsTR$System)[order(-mod_size)]
+
+# plot module after MAD
+mad_mod_plot <- lapply(as.list(matmod_sig_idx),function(x) within_mod_plot(mad_mat,x))
+mad_mod_calc <- sapply(as.list(matmod_sig_idx),function(x) within_mod_calc(mad_mat,x))
+
+
+# plot module for Dim 1
+dim1_mod_plot <- lapply(as.list(netmod1_sig_idx),function(x) within_mod_plot(br.by.ft1$mat,x))
+dim1_mod_calc <- sapply(as.list(netmod1_sig_idx),function(x) within_mod_calc(br.by.ft1$mat,x))
+
+# plot module for Dim 2
+dim2_mod_plot <- lapply(as.list(netmod2_sig_idx),function(x) within_mod_plot(br.by.ft2$mat,x))
+dim2_mod_calc <- sapply(as.list(netmod2_sig_idx),function(x) within_mod_calc(br.by.ft2$mat,x))
+
+# plot module for Dim 3
+dim3_mod_plot <- lapply(as.list(netmod3_sig_idx),function(x) within_mod_plot(br.by.ft3$mat,x))
+dim3_mod_calc <- sapply(as.list(netmod3_sig_idx),function(x) within_mod_calc(br.by.ft3$mat,x))
+
+#save the above plots
+listplot(mad_mod_plot,"enrich_mad")
+listplot(dim1_mod_plot,"enrich_dim1")
+listplot(dim2_mod_plot,"enrich_dim2")
+listplot(dim3_mod_plot,"enrich_dim3")
+
+```
+
+```{r between mod}
+between_name <- mod_calc_between_name(unique(parcelsTR$System))
+matmod_bt <- mod_rich_between(mask_mat)
+
+netmod1_bt<-mod_rich_between(br.by.ft1$mat)
+netmod1_bt$MOD <- matmod_bt$MOD[which(p.adjust(netmod1_bt$PVAL[matmod_bt$MODid], method = 'fdr') < 0.05)]
+netmod1_bt$MODid <- matmod_bt$MODid[which(p.adjust(netmod1_bt$PVAL[matmod_bt$MODid], method = 'fdr') < 0.05)]
+
+netmod2_bt<-mod_rich_between(br.by.ft2$mat)
+netmod2_bt$MOD <- matmod_bt$MOD[which(p.adjust(netmod2_bt$PVAL[matmod_bt$MODid], method = 'fdr') < 0.05)]
+netmod2_bt$MODid <- matmod_bt$MODid[which(p.adjust(netmod2_bt$PVAL[matmod_bt$MODid], method = 'fdr') < 0.05)]
+
+netmod3_bt<-mod_rich_between(br.by.ft3$mat)
+netmod3_bt$MOD <- matmod_bt$MOD[which(p.adjust(netmod3_bt$PVAL[matmod_bt$MODid], method = 'fdr') < 0.05)]
+netmod3_bt$MODid <- matmod_bt$MODid[which(p.adjust(netmod3_bt$PVAL[matmod_bt$MODid], method = 'fdr') < 0.05)]
+
+mad_bt_mod_plot <- between_mod_plot(matmod_bt,mad_mod_calc,"MAD Mask")
+dim1_bt_mod_plot <- between_mod_plot(netmod1_bt,dim1_mod_calc,"Dimension 1")
+dim2_bt_mod_plot <- between_mod_plot(netmod2_bt,dim2_mod_calc,"Dimension 2")
+dim3_bt_mod_plot <- between_mod_plot(netmod3_bt,dim3_mod_calc,"Dimension 3")
+
+mad_bt_mod_edge_plot <- between_mod_load_plot(matmod_bt,mad_mod_calc,"MAD Mask")
+dim1_bt_mod_load_plot <- between_mod_load_plot(netmod1_bt,dim1_mod_calc,"Dimension 1")
+dim2_bt_mod_load_plot <- between_mod_load_plot(netmod2_bt,dim2_mod_calc,"Dimension 2")
+dim3_bt_mod_load_plot <- between_mod_load_plot(netmod3_bt,dim3_mod_calc,"Dimension 3")
+
+bt_mod_diff(dim1_bt_mod_load_plot,dim2_bt_mod_load_plot,"Dim1 - Dim2")
+bt_mod_diff(dim2_bt_mod_load_plot,dim3_bt_mod_load_plot,"Dim2 - Dim3")
+bt_mod_diff(dim1_bt_mod_load_plot,dim3_bt_mod_load_plot,"Dim1 - Dim3")
+
+mad_bt_mod_edge_plot$plot
+dim1_bt_mod_load_plot$plot
+dim2_bt_mod_load_plot$plot
+dim3_bt_mod_load_plot$plot
+
+
+
+```
+
+
+
+
+

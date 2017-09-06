@@ -11,19 +11,19 @@ knitr::opts_chunk$set(
 	results = FALSE, eval = TRUE, cache = TRUE,
 	 fig.width = 8, fig.height = 10, tidy = TRUE
 )
-knitr::opts_knit$set(root.dir = '/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/')
+knitr::opts_knit$set(root.dir = '~/Desktop/BBL/')
 ```
 
 ```{r load packages}
-setwd('/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/')
-source('./script/chxRinitFunc.R')
+#source('./script/chxRinitFunc.R')
 ```
 
 ## Split 1601 into 2/3 and 1/3
 ```{r data split}
 #load data release
-bifactor <- read.csv('/data/joy/BBL/studies/pnc/n1601_dataFreezeDec2016/clinical/n1601_goassess_clinical_factor_scores_20161212.csv')
-demogra <- read.csv('/data/joy/BBL/studies/pnc/n1601_dataFreezeDec2016/demographics/n1601_demographics_go1_20161212.csv')
+setwd('~/Desktop/BBL/')
+bifactor <- read.csv('./studies/pnc/n1601_dataFreeze/clinical/n1601_goassess_clinical_factor_scores_20161212.csv')
+demogra <- read.csv('./studies/pnc/n1601_dataFreeze/demographics/n1601_demographics_go1_20161212.csv')
 go1data <- merge(bifactor,demogra, by = "bblid")
 go1tosplit <- go1data[,c('bblid','scanid.x','sex','race2','ageAtScan1','mood_4factor','psychosis_4factor','externalizing_4factor','phobias_4factor','overall_psychopathology_4factor')]
 #remove any NA's

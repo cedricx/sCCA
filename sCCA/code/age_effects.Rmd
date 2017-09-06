@@ -1,0 +1,89 @@
+---
+title: "Age effects"
+output: html_notebook
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = '/Users/hxia/Desktop/BBL/')
+require('PMA')
+require('Matrix')
+require('parallel')
+require('emdbook')
+require('caret')
+require('R.matlab')
+require('MASS')
+require('permute')
+require('matrixStats')
+require('scales')
+require('cowplot')
+require('ggplot2')
+require('ggrepel')
+require('rasterVis')
+require('mgcv')
+#source('~/Desktop/BBL/projects/xiaNetworkCca/sCCA/code/cca_functions.R')
+```
+
+```{r}
+u_boot <- p3Km111.org$u[,1]
+u_boot[-u.boot.plot[[1]]$fea] <- 0
+brain_score_boot <- brain_std %*%  u_boot
+brain_score <- brain_std %*%  p3Km111.org$u[,1] 
+med_score <- med_std %*% p3Km111.org$v[,1] 
+cor(subjid$ageAtScan1,-brain_score)
+cor(subjid$ageAtScan1,-brain_score_boot)
+foo<-lm(subjid$ageAtScan1 ~ subjid$sex + brain_score_boot)
+foo<-gam(subjid$ageAtScan1 ~ sex + s(age) + brain_score_boot, REML=TRUE)
+
+load('./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_net_ft.RData')
+load('./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_')
+
+test_brain_std <- scale(pwr.rgr.test)
+brain_score_test <- test_brain_std %*%  p3Km111.org$u[,6] 
+cor(sample_qa$ageAtScan1,brain_score_test)
+plot(sample_qa$ageAtScan1,brain_score_test)
+
+pwr_test_3k <- pwr_test_net_ft[,pwr.3k.train.idx]
+pwr_test_3k <- pwr_test_3k[, u.boot.plot[[2]]$fea ]
+meanstrength <- rowMeans(pwr_test_3k,na.rm = T)
+plot(sample_qa$ageAtScan1,meanstrength)
+cor(sample_qa$ageAtScan1,meanstrength)
+
+```
+
+```{r}
+brain_df <- data.frame(dim1 = brain_std %*% p3Km111.cand$u[,1],dim2 = brain_std %*% p3Km111.cand$u[,2],dim3 = brain_std %*% p3Km111.cand$u[,3],dim4 = brain_std %*% p3Km111.cand$u[,4],age = subjid$ageAtScan1/12, sex = as.ordered(as.factor(subjid$sex)))
+
+med_df <- data.frame( dim1 = med_std %*% p3Km111.cand$v[,1],dim2 = med_std %*% p3Km111.cand$v[,2],dim3 = med_std %*% p3Km111.cand$v[,3],dim4 = med_std %*% p3Km111.cand$v[,4],age = subjid$ageAtScan1/12, sex = as.ordered(as.factor(subjid$sex)))
+
+age_censor = 8
+
+gam_org<-function(x) {
+  data.frame(age = summary(x)$s.table[,'p-value'] ,sex = summary(x)$p.table['sex.L','Pr(>|t|)'])
+}
+
+brain_gam <- lapply(1:4,function(x) gam(brain_df[,x] ~ s(age) + sex , data = brain_df, subset = age >= age_censor, method="REML"))
+age_sex_brain.pval<-sapply(brain_gam, gam_org)
+age_sex.brain.sig.pval<-p.adjust(age_sex_brain.pval,method = 'bonferroni') 
+age_sex.brain.sig.pval
+
+age_deg_brain <- sapply(brain_gam, function(x) summary(x)$s.table[,'edf'])
+
+med_gam <- lapply(1:4,function(x) gam(med_df[,x] ~ s(age) + sex , data = med_df, subset = age >= age_censor, method="REML"))
+age_sex_med.pval<-sapply(med_gam, gam_org)
+age_sex.pval<-cbind(age_sex_brain.pval,age_sex_med.pval)
+
+age_sex.sig.pval<-which(p.adjust(age_sex.pval,method = 'bonferroni') < 0.05)
+colnames(age_sex.pval) <- c(paste('brain',1:4),paste('med',1:4))
+
+age_sex.pval[-age_sex.sig.pval] <- 0
+age_sex.pval
+age_deg_brain
+
+
+combined_df <- cbind(brain_df,med_df)
+combined_df <- combined_df[,1:10]
+colnames(combined_df) <- c(paste("brain_dim",1:4,sep=''), 'age','sex',paste("med_dim",1:4,sep=''))
+
+```
+
+

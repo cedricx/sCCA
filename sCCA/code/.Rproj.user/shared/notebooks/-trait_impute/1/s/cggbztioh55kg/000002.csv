@@ -1,0 +1,4 @@
+"0","pwr_trait_net_ft <- pwr_trait_net_ft[,pwr.3k.train.idx]
+"
+"2","Error: object 'pwr_trait_net_ft' not found
+"

@@ -1,0 +1,103 @@
+---
+title: "Select features"
+author: "Cedric Huchuan Xia"
+date: "10/27/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE,
+  results = FALSE, eval = TRUE, cache = TRUE,
+   fig.width = 10, fig.height = 7, tidy = TRUE
+)
+knitr::opts_knit$set(root.dir = '~/Google Drive/TDSlab/sCCA/aim1/')
+```
+  
+```{r load data}
+load("/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/restdti_train_ft.RData")
+
+```
+
+
+```{r REST thresholded nets}
+net.ft.train <- rest_train_net_ft
+net_mad<- apply(net.ft.train,2,function(x) round(mad(x),digits=10))
+net_mad_order <- data.frame(numedge = as.factor(1:dim(net.ft.train)[2]),mad = net_mad[order(-net_mad)])
+
+inc_idx <- which(net_mad>=net_mad_order$mad[3400])
+inc_net <- net.ft.train[,inc_idx]
+rest_inc_net <- inc_net
+
+#REGRESSION
+load("/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/restdti_train_qa.RData")
+sample_qa <- restdti_train_qa
+# Compile covariates
+sample_qa$sex.x <- as.factor(sample_qa$sex.x)
+sample_qa$race2.x <- as.factor(sample_qa$race2.x)
+
+# regress out covariates on the individual edges
+rest.net.rgr <- matrix(NA, nrow = dim(rest_inc_net)[1], ncol = dim(rest_inc_net)[2])
+rownames(rest.net.rgr) <- rownames(rest_inc_net)
+rest.net.rgr <- apply(rest_inc_net, 2, function(x) residuals.glm(glm(x ~ ageAtScan1.x + 
+    sex.x + race2.x + restRelMeanRMSMotion, data = sample_qa), type = "response"))
+
+# PCA-on these data
+rest.net.rgr.pca <-prcomp(rest.net.rgr, center = FALSE)
+
+```
+
+```{r DTI thresholded nets}
+net.ft.train <- dti_train_net_ft
+net_mad<- apply(net.ft.train,2,function(x) round(mad(x),digits=4))
+net_mad_order <- data.frame(numedge = as.factor(1:dim(net.ft.train)[2]),mad = net_mad[order(-net_mad)])
+
+inc_idx <- which(net_mad>0)
+inc_net <- net.ft.train[,inc_idx]
+
+dti_inc_net <- inc_net
+
+# REGRESSION
+# regress out covariates on the individual edges
+dti.net.rgr <- matrix(NA, nrow = dim(dti_inc_net)[1], ncol = dim(dti_inc_net)[2])
+rownames(dti.net.rgr) <- rownames(dti_inc_net)
+dti.net.rgr <- apply(dti_inc_net, 2, function(x) residuals.glm(glm(x ~ ageAtScan1.x + 
+    sex.x + race2.x + rel_mean_rms_motion_64, data = sample_qa), type = "response"))
+
+# PCA-on these data
+dti.net.rgr.pca <-prcomp(dti.net.rgr, center = FALSE)
+
+```
+
+```{r compile connectivity features and regress}
+# Combine DTI and REST selected features
+combo.net.rgr <- cbind(rest.net.rgr,dti.net.rgr)
+combo.net.pca.rgr <- list(rest = rest.net.rgr.pca, dti = dti.net.rgr.pca)
+
+save(combo.net.rgr,combo.net.pca.rgr,file='./result/201701/restdti_regr_data.RData')
+```
+
+```{r regress clinical features and regress}
+load("/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/restdti_train_med.RData")
+
+med <- restdti_train_med
+med.torgr <- within(med, rm("bblid"))
+rownames(med.torgr) <- med$bblid
+#plot(skewness(med.torgr),main='Sknewness Analysis of Raw Clinical Features',xlab='Psychiatric Symptoms',ylab='Skewness')
+#regress out the continous variables (SIPs)
+
+med.rgr.cont <- apply(med.torgr[,1:12], 2, function(x) residuals.glm(glm(x ~ ageAtScan1.x + 
+    sex.x + race2.x, data = sample_qa ), type = "response"))
+#regress out the binary variables (everything else)
+med.rgr.binary <- apply(med.torgr[,13:111], 2, function(x) residuals.glm(glm(x ~ ageAtScan1.x + 
+    sex.x + race2.x, family= binomial(link="logit"),data = sample_qa ), type = "response"))
+
+med.rgr <- cbind(med.rgr.cont,med.rgr.binary)
+rownames(med.rgr) <- med$bblid
+colnames(med.rgr) <- colnames(med.torgr)
+
+restdti_train_med_rgr <- med.rgr
+save(restdti_train_med_rgr, file = "./result/201701/restdti_med_rgr_data.RData")
+```
+
+

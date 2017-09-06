@@ -1,0 +1,219 @@
+---
+title: "Create Samples"
+author: "Cedric Huchuan Xia"
+date: "01/10/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE, message = FALSE, warning = FALSE,
+	results = FALSE, eval = TRUE, cache = TRUE,
+	 fig.width = 8, fig.height = 10, tidy = TRUE
+)
+knitr::opts_knit$set(root.dir = '~/Desktop/BBL/')
+```
+
+```{r load packages}
+source('~/Desktop/BBL/projects/xiaNetworkCca/sCCA/code/cca_functions.R')
+require('PMA')
+require('Matrix')
+require('parallel')
+require('emdbook')
+require('caret')
+require('R.matlab')
+require('MASS')
+require('permute')
+require('matrixStats')
+require('scales')
+require('cowplot')
+require('ggplot2')
+require('ggrepel')
+require('rasterVis')
+```
+#####################################
+#### Split 1601 into 1/2 and 1/2 #### 
+#####################################
+
+```{r data split}
+
+# apply subject-level exclusion
+hx_qa <- read.csv("./studies/pnc/n1601_dataFreeze/health/n1601_health_20161214.csv")
+sample_hx <- merge(go1test,hx_qa)
+go1test_qa <- subset(sample_hx, healthExcludev2 == 0)
+
+# apply strc exclusion
+t1_qa <- read.csv("./studies/pnc/n1601_dataFreeze/neuroimaging/t1struct/old/n1601_t1QaData_v2_20161215.csv")
+sample_t1 <- merge(go1test_qa, t1_qa)
+go1test_qa <- subset(sample_t1, t1Exclude == 0)
+
+# load modality exclusion file from the data-freeze
+mod_qa <- read.csv("./studies/pnc/n1601_dataFreeze/neuroimaging/rest/old/n1601_RestQAData_20170318.csv")
+sample_mod <- merge(go1test_qa,mod_qa)
+go1test_qa <- subset(sample_mod, restExclude ==0)
+
+go1test_qa<-go1test_qa[order(go1test_qa$bblid),]
+
+write.csv(go1test_qa,'./projects/xiaNetworkCca/sCCA/aim1/result/201701/go1test_subject_qa.csv',row.names=FALSE, quote=FALSE)
+```
+
+
+#####################################
+##### Concatenate Network Data ###### 
+#####################################
+
+```{r load power network for testing}
+n_sample_test <- dim(go1test_qa)[1]
+sample_net_test<-array(NA, c(264, 264, n_sample_test))
+for (i in 1:n_sample_test){
+  scanid <- go1test_qa$scanid[i]
+  netpath<- paste("./studies/pnc/n1601_dataFreeze/neuroimaging/rest/restNetwork_264PowerPNC/264PowerPNCNetworks/",scanid,"_264PowerPNC_network.txt",sep="")
+  sample_net_test[,,i] <- as.matrix(read.table(netpath))
+  print(paste(i,"."," copying ",scanid,"_","Power",sep=""))
+}
+save(sample_net_test, file ="./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_netmat.RData")
+
+```
+
+
+```{r make feature table of the 3D test matrix}
+net_ft_test <-t(apply(sample_net_test,c(3),function(x) x[upper.tri(x, diag = F)]))
+rownames(net_ft_test) <- go1test_qa$bblid
+
+save(net_ft_test,file ="./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_net_ft.RData")
+```
+
+#####################################
+########### Select Features ######### 
+#####################################
+```{r calculate MAD}
+con_mad_test<- apply(net_ft_test,2,function(x) round(mad(x,na.rm=T),digits=4))
+con_mad_order_test <- data.frame(numedge = as.factor(1:dim(net_ft_test)[2]),mad = con_mad_test[order(-con_mad_test)])
+salient_percent_test <- c(quantile(con_mad_test,c(.95,.9,.75,.5),na.rm = T))
+thresh <- c(1,sapply(2:length(salient_percent_test),function(i) round(mean(which(con_mad_order_test$mad == salient_percent_test[i])))), dim(net_ft_test)[2])
+con_mad_order_test$group <- as.factor(c(rep(1,thresh[2]),rep(2,thresh[3]-thresh[2]),rep(3,thresh[4]-thresh[3]),rep(4,thresh[5]-thresh[4])))
+```
+
+```{r select features}
+inc_idx_test <- which(con_mad_test>=con_mad_order_test$mad[3400])
+
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_3k_stats.RData")
+inc_net_test <- net_ft_test[,pwr.3k.train.idx]
+inc_net_test[is.na(inc_net_test)] <- 0
+save(inc_net_test,file ="./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_net_ft.RData")
+
+```
+
+############################################
+########### Regress out covariates ######### 
+############################################
+
+
+```{r regress out testing}
+# Compile covariates
+covariate_data_test <- go1test_qa
+covariate_data_test$sex <- as.factor(covariate_data_test$sex)
+covariate_data_test$race2 <- as.factor(covariate_data_test$race2)
+
+# regress out covariates on the individual edges
+net.ft.rgr.test <- matrix(NA, nrow = dim(inc_net_test)[1], ncol = dim(inc_net_test)[2])
+rownames(net.ft.rgr.test) <- rownames(inc_net_test)
+net.ft.rgr.test <- apply(inc_net_test, 2, function(x) residuals.glm(glm(x ~  
+    ageAtScan1 + sex + race2 + restRelMeanRMSMotion, data = covariate_data_test), type = "response"))
+
+net.ft.rgr.ltd.test <- apply(inc_net_test, 2, function(x) residuals.glm(glm(x ~  
+    race2 + restRelMeanRMSMotion, data = covariate_data_test), type = "response"))
+save(net.ft.rgr.test,file ="./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_net_ft_rgr.RData")
+save(net.ft.rgr.ltd.test,file ="./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_net_ft_rgr_ltd.RData")
+
+```
+
+#####################################################
+########### Compile and regress out clinical ######### 
+#####################################################
+```{r compile medical}
+load('./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_all_med.RData')
+go1med_test <- subset(pwr_all_med,bblid %in% go1test_qa$bblid, select = -bblid)
+save(go1med_test,file ="./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_med_test.RData")
+```
+
+```{r regress clinical on testing}
+
+# regress out covariates on the clinical data
+med.ft.rgr.test <- matrix(NA, nrow = dim(go1med_test)[1], ncol = dim(go1med_test)[2])
+rownames(med.ft.rgr.test) <- rownames(go1med_test)
+med.ft.rgr.test <- apply(go1med_test, 2, function(x) residuals.glm(glm(x ~  
+    ageAtScan1 + sex + race2 + restRelMeanRMSMotion, data = covariate_data_test), type = "response"))
+
+med.ft.rgr.ltd.test <- apply(go1med_test, 2, function(x) residuals.glm(glm(x ~  
+    race2 + restRelMeanRMSMotion, data = covariate_data_test), type = "response"))
+save(med.ft.rgr.test,file ="./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_med_ft_rgr.RData")
+save(med.ft.rgr.ltd.test,file ="./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_test_med_ft_rgr_ltd.RData")
+```
+
+
+###############################################################
+####################### sCCA on test #########################
+###############################################################
+```{r Grid Search}
+data_test <- list(brain = net.ft.rgr.test, behavior = med.ft.rgr.test)
+
+# create 3 fold CV sets 10 times in the sub-training set to obtain average
+testid <- createDataPartition(go1test_qa$overall_psychopathology_4factor, p = 0.667, list =T,times=10)
+brain_sample <- mclapply(testid, function(id) data_test$brain[id,])
+behavior_sample <- mclapply(testid, function(id) data_test$behavior[id,])
+
+```
+
+```{r Covariance explained}
+load("./projects/xiaNetworkCca/sCCA/aim1/data/med_item_annotation.RData")
+
+modenum <- dim(data_test$behavior)[2]
+all_components_test <- ccaDW(data_test$brain, data_test$behavior,0.8,0.4,modenum)
+
+brain_std_test <- apply(data_test$brain,2,scale)
+med_std_test <- apply(data_test$behavior,2,scale)
+covmat <- t(all_components_test$u) %*% t(brain_std_test) %*% med_std_test %*% all_components_test$v
+varE <- diag(covmat)^2 / sum(diag(covmat)^2)
+varE.df <- data.frame(modenum = as.factor(1:modenum), var = varE)
+candnum = 4
+
+p.var<-ggplot(varE.df,aes(modenum,var)) +
+  geom_point(stat = 'identity',aes(color = var > varE[candnum+1], size = var)) +
+  geom_hline(yintercept = 1/modenum,linetype="dashed") +
+  scale_x_discrete(name ="Mode", limits=c(0:modenum),breaks =  c(1,seq(10,modenum,10))) +
+  scale_y_continuous(expand = c(0, 0),limits=c(0,0.07),labels = percent,name = "Variance Explained", breaks=seq(0,0.07,length=4)) +
+  theme_classic(base_size = 20) +
+  theme(legend.position = 'none') 
+
+p.var
+```
+
+```{r run sCCA on candidate modes }
+candnum <- 4
+sCCA.cand.test <- ccaDW(data_test$brain, data_test$behavior,0.8,0.4,candnum)
+fold.cca.test<-mclapply(seq_along(testid),function(i) ccaDW(brain_sample[[i]],behavior_sample[[i]],0.8,0.4,20))
+cand.cca.ro.test <- sapply(fold.cca.test,function(x) reorderCCA(x,sCCA.cand.test,20))
+cand.cca.cor.test <- rowMeans(simplify2array(cand.cca.ro.test['cors',]),na.rm =T)
+cand.cca.cor.se.test <- rowSds(simplify2array(cand.cca.ro.test['cors',]),na.rm =T)/sqrt(dim(cand.cca.ro.test)[2])
+```
+
+```{r plot correlation}
+cor.df.test <- data.frame(modenum = as.factor(1:candnum), cor = cand.cca.cor.test, se = cand.cca.cor.se.test)
+cor.df.order.test <- cor.df.test[order(-cor.df.test$cor),]
+cor.lim.test <- aes(ymax = cor.df.order.test$cor + cor.df.test$se, ymin = cor.df.order.test$cor - cor.df.test$se)
+```
+
+```{r permutation test}
+num.perm = 1000
+behavior.perm.test <- rlply(num.perm,data_test$behavior[sample(nrow(data_test$behavior)),])
+cand.perm.cca.test<-sapply(behavior.perm.test, function(y_perm){ out<-ccaDWpermorder(data_test$brain,y_perm,0.8,0.4,candnum,sCCA.cand.test)} )
+cand.perm.cca.test<-sapply(behavior.perm.test, function(y_perm){ out<-ccaDWpermorg(data_test$brain,y_perm,0.8,0.4,candnum)} )
+
+
+#load("~/Desktop/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_perm_cca.RData")
+perm.cor.test <- simplify2array(cand.perm.cca.test['cors',])
+perm.pval.test <- sapply(seq_along(cor.df.test$cor),function(x) (length(which(perm.cor.test[x,] >= cor.df.test$cor[x])) ) / num.perm)
+perm.pval.adj.test <- p.adjust(perm.pval.test,method = "fdr")
+
+```

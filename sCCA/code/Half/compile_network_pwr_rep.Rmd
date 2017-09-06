@@ -1,0 +1,106 @@
+---
+title: "Create final sample (netmat, med, CNB)"
+author: "Cedric Huchuan Xia"
+date: "09/02/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE,
+  results = FALSE, eval = TRUE, cache = TRUE,
+	 fig.width = 7, fig.height = 7, tidy = TRUE
+)
+knitr::opts_knit$set(root.dir = '~/Desktop/BBL/')
+```
+
+
+```{r load packages, message=FALSE, warning=FALSE, cache=TRUE}
+source('./script/chxRinitFunc.R')
+```
+
+```{r compile a master training sample}
+# load train-test split
+sample_sub <- read.csv("./projects/xiaNetworkCca/sCCA/aim1/result/201707/go1train_subject.csv")
+
+# apply subject-level exclusion
+hx_qa <- read.csv("./studies/pnc/n1601_dataFreeze/health/n1601_health_20161214.csv")
+sample_hx <- merge(sample_sub,hx_qa)
+sample_qa <- subset(sample_hx, healthExcludev2 == 0)
+
+# apply strc exclusion
+t1_qa <- read.csv("./studies/pnc/n1601_dataFreeze/neuroimaging/t1struct/old/n1601_t1QaData_v2_20161215.csv")
+sample_t1 <- merge(sample_qa, t1_qa)
+sample_qa <- subset(sample_t1, t1Exclude == 0)
+
+# load modality exclusion file from the data-freeze
+mod_qa <- read.csv("./studies/pnc/n1601_dataFreeze/neuroimaging/rest/old/n1601_RestQAData_20170318.csv")
+sample_mod <- merge(sample_qa,mod_qa)
+sample_qa <- subset(sample_mod, restExclude ==0)
+
+sample_qa<-sample_qa[order(sample_qa$bblid),]
+pwr_train_qa <- sample_qa
+save(pwr_train_qa,file = "./projects/xiaNetworkCca/sCCA/aim1/result/201707/pwr_train_qa.RData")
+```
+
+
+### Concatenate Power Rest
+```{r load appropriate network}
+n_sample <- dim(sample_qa)[1]
+sample_net<-array(NA, c(264, 264, n_sample))
+for (i in 1:n_sample){
+  scanid <- sample_qa$scanid[i]
+  netpath<- paste("/data/joy/BBL/studies/pnc/n1601_dataFreeze2016/neuroimaging/rest/restNetwork_264PowerPNC/264PowerPNCNetworks/",scanid,"_264PowerPNC_network.txt",sep="")
+  sample_net[,,i] <- as.matrix(read.table(netpath))
+  print(paste(i,"."," copying ",scanid,"_","Power",sep=""))
+  }
+```
+
+```{r save concatenated matrix}
+pwr_train_net <- sample_net
+save(pwr_train_net, file ="./result/201701/pwr_train_netmat.RData")
+```
+
+```{r make feature table of the matrix}
+net_ft <-t(apply(sample_net,c(3),function(x) x[upper.tri(x, diag = F)]))
+rownames(net_ft) <- sample_qa$bblid
+
+pwr_train_net_ft <- net_ft
+save(pwr_train_net_ft,file ="./result/201701/pwr_train_net_ft.RData")
+```
+
+#### Average Network of Power for all training subjects
+```{r average power net mat, echo=FALSE }
+net_ave <- apply(sample_net, c(1,2), function(x) mean(na.omit(x)))
+pwr_train_ave <- net_ave
+
+parcels <- read.csv('/data/joy/BBL/studies/pnc/n1601_dataFreeze2016/neuroimaging/rest/restNetwork_power/Consensus264.csv')
+parcelshem <- parcels[order(parcels$X,parcels$Community),]
+parcelshemL <- subset(parcelshem,X <0)
+parcelshemL <- parcelshemL[order(parcelshemL$Community,parcelshemL$X,parcelshemL$Y,parcelshemL$Z),]
+parcelshemM <- parcels[which(parcelshem$X == 0),]
+parcelshemR <- subset(parcelshem,X >0)
+parcelshemR <- parcelshemR[order(parcelshemR$Community,parcelshemR$X,parcelshemR$Y,parcelshemR$Z),]
+
+parcelsTR <- rbind(parcelshemL,parcelshemM,parcelshemR)
+
+pwr_train_ave <- pwr_train_ave[parcelsTR$ROI,parcelsTR$ROI]
+save(pwr_train_ave,file="./result/201701/pwr_train_ave.RData")
+save(parcelsTR, file = "./result/201701/pwr_parcels.RData")
+levelplot(pwr_train_ave, at = seq(-1,1,length=10),par.settings = BuRdTheme(),xlab='',ylab='',main="Power Train Set")
+
+pwr.3k.train.ave <- pwr.3k.train.ave[parcelsTR$ROI,parcelsTR$ROI]
+levelplot(pwr.3k.train.ave, at = seq(-1,1,length=10),par.settings = BuRdTheme(),xlab='',ylab='',main="Power Train Set")
+```
+
+
+
+### Compile clinical data for the training data 
+``` {r clinical}
+load('../aim1/result/201701/med_impute.RData')
+med.sample <- subset(med.final, is.element(med.final$bblid,sample_qa$bblid)) 
+#save the 111 training sample
+pwr_train_med<-med.sample
+save(pwr_train_med,file= "../aim1/result/201701/pwr_train_med.RData")
+```
+#### There are `r dim(meddata112.train)[1]` subjects with `r dim(meddata112.train)[2]-1` clinical items

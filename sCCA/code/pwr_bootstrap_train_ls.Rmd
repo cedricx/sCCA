@@ -1,0 +1,91 @@
+---
+title: "Bootstrap sCCA results"
+output: html_notebook
+---
+
+```{r setup}
+#knitr::opts_knit$set(root.dir = '/Users/hxia/Desktop/BBL/')
+knitr::opts_knit$set(root.dir = '/data/joy/BBL/')
+require("rasterVis")
+require('PMA')
+require('Matrix')
+require('parallel')
+require('emdbook')
+require('caret')
+require('R.matlab')
+require('MASS')
+require('permute')
+require('matrixStats')
+require('scales')
+require('ggrepel')
+require('cowplot')
+#source('~/Desktop/BBL/projects/xiaNetworkCca/sCCA/code/cca_functions.R')
+#setwd('/Users/hxia/Desktop/BBL/')
+setwd('/data/joy/BBL/')
+source('./projects/xiaNetworkCca/sCCA/code/cca_functions.R')
+```
+
+```{r load sCCA results}
+#load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_cca.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_train_qa.RData")
+subjid <- pwr_train_qa
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_med_rgr_data.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_regr_data.RData")
+net.data <- unname(pwr.rgr.train)
+med.data <- unname(pwr_train_med_rgr)
+data <- list(brain = net.data, behavior = med.data)
+```
+
+
+```{r bootstrap}
+#set up the BT samples.
+bootnum <- 500
+bootid<-createResample(subjid$overall_psychopathology_4factor, list = T, times = bootnum)
+brain_boot <- lapply(bootid, function(id) data$brain[id,])
+behavior_boot <- lapply(bootid, function(id) data$behavior[id,])
+
+#
+#p3Km111.org<-ccaDW(data$brain,data$behavior,0.8,0.4,10)
+#save(p3Km111.org, file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_p3Km111_org.RData")
+
+sCCA.boot.train.ls<- lapply(seq_along(bootid),function(i) ccaDW(brain_boot[[i]],behavior_boot[[i]],0.4,0.4,10))
+save(sCCA.boot.train.ls,file='./projects/xiaNetworkCca/sCCA/aim1/result/201701/sCCA_boot_train_ls1.RData')
+
+```
+
+```{r load processed data}
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_p3Km111_org.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/p3Km111_boot1000.RData")
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/3-18-2017_replication.RData")
+```
+
+```{r compute confidence interval}
+sCCA.test.org <- ccaDW(X = data.test$brain, data.test$behavior, pen_x = 0.8, pen_y = 0.4, rank = 4)
+
+bootnum = 1000
+sCCA.test.boot.ro<- lapply(1:bootnum,function(i) reorderCCA(sCCA.boot.test[[i]],sCCA.test.org,10) )
+sCCA.test.boot.u <- lapply(c(1,4,3,2), function(x) sapply(1:bootnum, function(i) sCCA.test.boot.ro[[i]]$u[,x]))
+sCCA.test.boot.v <- lapply(c(1,4,3,2), function(x) sapply(1:bootnum, function(i) sCCA.test.boot.ro[[i]]$v[,x]))
+#p3Km111.boot.cor <-  sapply(1:1000, function(i) p3Km111.boot.ro[[i]]$cor)
+perm.pass = c(1,4,3,2)
+u.boot.plot <- lapply(seq_along(perm.pass), function(x) bootplot_u(sCCA.test.org$u[,perm.pass[x]], sCCA.test.boot.u[[x]] ))
+v.boot.plot <- lapply(seq_along(perm.pass), function(x) bootplot(sCCA.test.org$v[,perm.pass[x]], sCCA.test.boot.v[[x]] ))
+```
+
+```{r organize item questions }
+load("./projects/xiaNetworkCca/sCCA/aim1/data/med_item_annotation.RData")
+```
+
+```{r get brain loads for consensus analysis}
+load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_3k_stats.RData")
+brain.test.load <- lapply(u.boot.plot, function(load) {
+  mat <- matrix(0,264,264);
+  mat[upper.tri(mat,diag=F)][pwr.3k.train.idx][load$fea] <- load$load;
+  mat <- sna::symmetrize(mat,rule = "upper");
+  mat})
+save(brain.test.load, file= "./projects/xiaNetworkCca/sCCA/aim1/result/201701/brain_load_test.RData")
+
+```
+
+
+

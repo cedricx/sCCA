@@ -1,0 +1,81 @@
+---
+title: "Select features"
+author: "Cedric Huchuan Xia"
+date: "10/27/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE,
+  results = FALSE, eval = TRUE, cache = TRUE,
+   fig.width = 10, fig.height = 7, tidy = TRUE
+)
+knitr::opts_knit$set(root.dir = '~/Google Drive/TDSlab/sCCA/aim1/')
+```
+  
+```{r load data}
+load("/data/joy/BBL/projects/xiaNetworkCca/sCCA/aim1/result/201701/go1_train_power_ft.RData")
+```
+
+
+```{r calculate covariance}
+power_mad<- apply(power.ft.train,2,function(x) round(mad(x),digits=4))
+  
+# ggplot2 version
+power_mad_order <- data.frame(numedge = as.factor(1:dim(power.ft.train)[2]),mad = power_mad[order(-power_mad)])
+salient_percent <- c(quantile(power_mad,c(.95,.9,.75,.5)))
+thresh <- c(1,sapply(seq_along(salient_percent),function(i) round(mean(which(power_mad_order$mad == salient_percent[i])))), dim(power.ft.train)[2])
+
+power_mad_order$group <- as.factor(c(rep(1,thresh[2]),rep(2,thresh[3]-thresh[2]),rep(3,thresh[4]-thresh[3]),rep(4,thresh[5]-thresh[4]),rep(5,thresh[6]-thresh[5])))
+
+
+p <- ggplot(power_mad_order,aes(numedge,mad)) +
+     geom_bar(stat = 'identity',aes(fill= group,color=group)) +
+     scale_fill_brewer() +
+     scale_x_discrete(breaks=c(thresh,dim(power.ft.train)[2]),name = "Individual Edge") +
+     scale_y_continuous(name = "Median Abs. Deviation") +
+     theme_classic(base_size = 20) +
+     annotate("text", x = thresh[1]+(thresh[2]-thresh[1])/2, y = 0.33,label = "95%",size =4.5,colour = "black" ) +
+     annotate("text", x = thresh[2]+(thresh[3]-thresh[2])/2, y = 0.3,label = "90%",size =4.5,colour = "black" ) +
+     annotate("text", x = thresh[3]+(thresh[4]-thresh[3])/2, y = 0.28,label = "75%",size =4.5,colour = "black" ) +
+    annotate("text", x = thresh[4]+(thresh[5]-thresh[4])/2, y = 0.26,label = "50%",size =4.5,colour = "black" ) +
+     theme(legend.position="none") +
+    theme(axis.text.x=element_text(angle=90,hjust = 1,vjust = +0.5)) +
+    ggtitle("Train Set") +
+    theme(plot.title = element_text(hjust = 0.5))
+p
+
+```
+
+```{r compile connectivity features and regress}
+# Take the top 10% edges
+inc_idx <- which(power_mad>=salient_percent[2])
+inc_net <- power.ft.train[,inc_idx]
+power.ft.test[,-inc_idx] <- NA
+
+# Compile covariates
+sample_qa$sex <- as.factor(sample_qa$sex)
+sample_qa$race2 <- as.factor(sample_qa$race2)
+
+```
+
+```{r regress clinical features and regress}
+load("./result/201701/bfc_train_med.RData")
+med <- bifactor.train
+med.torgr <- within(med, rm("bblid"))
+rownames(med.torgr) <- med$bblid
+#plot(skewness(med.torgr),main='Sknewness Analysis of Raw Clinical Features',xlab='Psychiatric Symptoms',ylab='Skewness')
+#regress out the continous variables (SIPs)
+
+med.rgr <- apply(med.torgr, 2, function(x) residuals.glm(glm(x ~ ageAtScan1 + 
+    sex + race2, data = sample_qa ), type = "response"))
+
+rownames(med.rgr) <- med$bblid
+colnames(med.rgr) <- colnames(med.torgr)
+
+bfc_train_med_rgr <- med.rgr
+
+save(bfc_train_med_rgr, file = "./result/201701/bfc_med_rgr_data.RData")
+
+```
