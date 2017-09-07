@@ -1,0 +1,146 @@
+---
+title: "Create Samples"
+author: "Cedric Huchuan Xia"
+date: "09/07/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE, message = FALSE, warning = FALSE,
+	results = FALSE, eval = TRUE, cache = TRUE,
+	 fig.width = 8, fig.height = 10, tidy = TRUE
+)
+knitr::opts_knit$set(root.dir = '~/Desktop/BBL/')
+```
+
+```{r load packages}
+#source('./script/chxRinitFunc.R')
+```
+
+## Split 1601 into 2/3 and 1/3
+```{r data split}
+#load data release
+setwd('~/Desktop/BBL/')
+bifactor <- read.csv('./studies/pnc/n1601_dataFreeze/clinical/n1601_goassess_clinical_factor_scores_20161212.csv')
+demogra <- read.csv('./studies/pnc/n1601_dataFreeze/demographics/n1601_demographics_go1_20161212.csv')
+go1data <- merge(bifactor,demogra, by = "bblid")
+go1tosplit <- go1data[,c('bblid','scanid.x','sex','race2','ageAtScan1','mood_4factor','psychosis_4factor','externalizing_4factor','phobias_4factor','overall_psychopathology_4factor')]
+#remove any NA's
+go1nona <- subset(go1tosplit,is.na(go1tosplit$overall_psychopathology_4factor)==FALSE)
+
+#split the sample
+set.seed(3456)
+trainIndex <- createDataPartition(go1nona$overall_psychopathology_4factor, p = 0.667, list =F,times=1)
+go1train <- go1nona[trainIndex,]
+go1test <- go1nona[-trainIndex,]
+
+#save the sample split
+write.csv(go1train,'./result/201701/go1train_subject.csv',row.names=FALSE, quote=FALSE)
+write.csv(go1test,'./result/201701/go1test_subject.csv',row.names=FALSE, quote=FALSE)
+```
+#### The final training set for go1 has `r dim(go1train)[1]` subjects.
+#### The final testing set for go1 has `r dim(go1test)[1]` subjects.
+
+## Visualize the sample split
+```{r visualize the sample split, echo=FALSE}
+train.title <- "Train"
+y.label <- "Percentage"
+numbin <- 15
+
+train.sex <- ggplot(go1train,aes(sex)) +
+  geom_bar(aes(y=..count../sum(..count..)*100),fill='pink',alpha=0.8, width =0.5) +
+  theme(axis.ticks = element_blank()) +
+	scale_x_discrete(limit = c("1", "2"), labels = c("male","female"))+
+	xlab("Sex") + ylab(y.label) + ggtitle(train.title)
+
+train.race <- ggplot(go1train,aes(race2)) +
+	geom_bar(aes(y=..count../sum(..count..)*100),fill='red',alpha=0.8, width =0.5) +
+	theme(axis.ticks = element_blank()) +
+	scale_x_discrete(limit = c("1", "2","3"), labels = c("White","Black","Other"))+
+	xlab("Sex") + ylab(y.label) + ggtitle(train.title)
+
+binwidth.age <- diff(range(go1train$ageAtScan1/12))/numbin
+train.age <- ggplot(go1train,aes(ageAtScan1/12)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.age,fill='orange',alpha=0.8) +
+	xlab("Age") + ylab(y.label) + ggtitle(train.title)
+
+binwidth.mod <- diff(range(go1train$mood_4factor))/numbin
+train.mood <- ggplot(go1train,aes(mood_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.mod,fill='yellow',alpha=0.8) +
+	xlab("Mood") + ylab(y.label) + ggtitle(train.title)
+
+binwidth.psych <- diff(range(go1train$psychosis_4factor))/numbin
+train.psych <- ggplot(go1train,aes(psychosis_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.psych,fill='green',alpha=0.8) +
+	xlab("Psychosis") + ylab(y.label) + ggtitle(train.title)
+
+binwidth.ext <- diff(range(go1train$externalizing_4factor))/numbin
+train.ext <- ggplot(go1train,aes(externalizing_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.ext,fill='cyan',alpha=0.8) +
+	xlab("Ext") + ylab(y.label) + ggtitle(train.title)
+
+binwidth.pnb <- diff(range(go1train$phobias_4factor))/numbin
+train.pnb <- ggplot(go1train,aes(phobias_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.pnb,fill='blue',alpha=0.8) +
+	xlab("Phb") + ylab(y.label) + ggtitle(train.title)
+
+binwidth.allpsych <- diff(range(go1train$overall_psychopathology_4factor))/numbin
+train.allpsych <- ggplot(go1train,aes(overall_psychopathology_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.allpsych,fill='purple',alpha=0.8) +
+	xlab("Overall Psych") + ylab(y.label) + ggtitle(train.title)
+
+test.title <- "Test"
+
+test.sex <- ggplot(go1test,aes(sex)) +
+	geom_bar(aes(y=..count../sum(..count..)*100),fill='pink',alpha=0.5, width =0.5) +
+	theme(axis.ticks = element_blank()) +
+	scale_x_discrete(limit = c("1", "2"), labels = c("male","female"))+
+	xlab("Sex") + ylab(y.label) + ggtitle(test.title)
+
+test.race <- ggplot(go1test,aes(race2)) +
+	geom_bar(aes(y=..count../sum(..count..)*100),fill='red',alpha=0.5, width =0.5) +
+	theme(axis.ticks = element_blank()) +
+	scale_x_discrete(limit = c("1", "2","3"), labels = c("White","Black","Other"))+
+	xlab("Sex") + ylab(y.label) + ggtitle(test.title)
+
+binwidth.age <- diff(range(go1test$ageAtScan1/12))/numbin
+test.age <- ggplot(go1test,aes(ageAtScan1/12)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.age,fill='orange',alpha=0.5) +
+	xlab("Age") + ylab(y.label) + ggtitle(test.title)
+
+binwidth.mod <- diff(range(go1test$mood_4factor))/numbin
+test.mood <- ggplot(go1test,aes(mood_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.mod,fill='yellow',alpha=0.5) +
+	xlab("Mood") + ylab(y.label) + ggtitle(test.title)
+
+binwidth.psych <- diff(range(go1test$psychosis_4factor))/numbin
+test.psych <- ggplot(go1test,aes(psychosis_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.psych,fill='green',alpha=0.5) +
+	xlab("Psychosis") + ylab(y.label) + ggtitle(test.title)
+
+binwidth.ext <- diff(range(go1test$externalizing_4factor))/numbin
+test.ext <- ggplot(go1test,aes(externalizing_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.ext,fill='cyan',alpha=0.5) +
+	xlab("Ext") + ylab(y.label) + ggtitle(test.title)
+
+binwidth.pnb <- diff(range(go1test$phobias_4factor))/numbin
+test.pnb <- ggplot(go1test,aes(phobias_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.pnb,fill='blue',alpha=0.5) +
+	xlab("Phb") + ylab(y.label) + ggtitle(test.title)
+
+binwidth.allpsych <- diff(range(go1test$overall_psychopathology_4factor))/numbin
+test.allpsych <- ggplot(go1test,aes(overall_psychopathology_4factor)) +
+	geom_histogram(aes(y=..count../sum(..count..)*100),binwidth=binwidth.allpsych,fill='purple',alpha=0.5) +
+	xlab("Overall Psych") + ylab(y.label) + ggtitle(test.title)
+
+data.split.plot<- plot_grid(train.sex, test.sex, train.race, test.race, train.age, test.age,
+		  train.mood, test.mood, train.ext, test.ext, train.psych, test.psych,
+		  train.pnb, test.pnb, train.allpsych, test.allpsych,
+		   align = "h", nrow =4)
+
+data.split.plot
+```
+
+
+
