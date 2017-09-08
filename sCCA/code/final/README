@@ -1,4 +1,6 @@
-### go1sample_split
+# go1sample_split
+
+
 Use this file to apply exclusion criteria and create the discovery and replication samples 
 
 ### compile_network_pwr ###
