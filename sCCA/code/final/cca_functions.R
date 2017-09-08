@@ -240,8 +240,8 @@ bootstats2 <- function(org,bootdata, uplim,lwlim){
   }
 
 bootplot <- function(org, boot){
-  btst <- bootstats2(org,boot,0.95,0.05)
-
+  btst <- bootstats2(org,boot,0.975,0.025)
+  
   p <- ggplot(btst,aes(fea,load))+
     geom_point(aes(colour = low * high > 0)) +
     geom_errorbar(aes(ymax = high, ymin = low),  width=0.25) +
