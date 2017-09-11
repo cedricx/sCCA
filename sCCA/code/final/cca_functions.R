@@ -257,7 +257,7 @@ bootplot <- function(org, boot){
 ## write an alternative bootplot function for the u's so it doesn't involve the absolute values
 
 bootplot_u <- function(org, boot){
-  btst <- bootstats2(org,boot,0.99995,0.00005)
+  btst <- bootstats2(org,boot,0.995,0.005)
   
   p <- ggplot(btst,aes(fea,load))+
     geom_point(aes(colour = low * high > 0)) +
