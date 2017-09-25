@@ -14,17 +14,23 @@ knitr::opts_chunk$set(
 knitr::opts_knit$set(root.dir = '~/Desktop/BBL/')
 ```
   
+```{r load packages}
+library('caret')
+library('ggplot2')
+library('cowplot')
+```
+
 ```{r load data}
+setwd("/data/joy/BBL/")
 load("./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_train_net_ft.RData")
 power.ft.train <- pwr_train_net_ft
 ```
 
 
-```{r calculate covariance}
+```{r select edges with the most variance}
 power_mad<- apply(power.ft.train,2,function(x) round(mad(x),digits=4))
-
   
-# ggplot2 version
+# plot the edge variationn
 power_mad_order <- data.frame(numedge = as.factor(1:dim(power.ft.train)[2]),mad = power_mad[order(-power_mad)])
 salient_percent <- c(quantile(power_mad,c(.95,.9,.75,.5),na.rm = T))
 thresh <- c(1,sapply(seq_along(salient_percent),function(i) round(mean(which(power_mad_order$mad == salient_percent[i])))), dim(power.ft.train)[2])
@@ -44,14 +50,13 @@ p <- ggplot(power_mad_order,aes(numedge,mad)) +
     annotate("text", x = thresh[4]+(thresh[5]-thresh[4])/2, y = 0.26,label = "50%",size =4.5,colour = "black" ) +
      theme(legend.position="none") +
     theme(axis.text.x=element_text(angle=90,hjust = 1,vjust = +0.5)) +
-    ggtitle("Train Set") +
+    ggtitle("Median Absolute Deviation") +
     theme(plot.title = element_text(hjust = 0.5))
 p
 ```
 
 ```{r compile connectivity features and regress}
-# Take the edges with non-zero mad
-power_mad 
+# Take the edges with top 10% MAD
 inc_idx <- which(power_mad>=power_mad_order$mad[3410])
 inc_net <- power.ft.train[,inc_idx]
 
@@ -68,17 +73,17 @@ rownames(power.rgr) <- rownames(power.ft.train)
 power.rgr <- apply(inc_net, 2, function(x) residuals.glm(glm(x ~  
     sex + race2 + restRelMeanRMSMotion, data = sample_qa), type = "response"))
 
-power.rgr <- apply(inc_net, 2, function(x) residuals.glm(glm(x ~  
-    race2 + restRelMeanRMSMotion, data = sample_qa), type = "response"))
+#power.rgr <- apply(inc_net, 2, function(x) residuals.glm(glm(x ~  
+#    race2 + restRelMeanRMSMotion, data = sample_qa), type = "response"))
 
 # PCA-on these data
-power.rgr.pca <-prcomp(power.rgr, center = FALSE)
+#power.rgr.pca <- prcomp(power.rgr, center = FALSE)
 
 pwr.rgr.train <- power.rgr
-pwr.rgr.pca.train <- power.rgr.pca
-save(pwr.rgr.pca.train,pwr.rgr.train,file='./result/201701/pwr_regr_data.RData')
-save(pwr.rgr.train,file='./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_regr_no_age_data.RData')
-save(pwr.rgr.train,file='./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_regr_mo_ra_data.RData')
+#pwr.rgr.pca.train <- power.rgr.pca
+#save(pwr.rgr.pca.train,pwr.rgr.train,file='./result/201701/pwr_regr_data.RData')
+#save(pwr.rgr.train,file='./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_regr_no_age_data.RData')
+#save(pwr.rgr.train,file='./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_regr_mo_ra_data.RData')
 
 ```
 
@@ -88,11 +93,11 @@ med <- pwr_train_med
 
 med.torgr <- within(med, rm("bblid"))
 rownames(med.torgr) <- med$bblid
-#plot(skewness(med.torgr),main='Sknewness Analysis of Raw Clinical Features',xlab='Psychiatric Symptoms',ylab='Skewness')
-#regress out the continous variables (SIPs)
 
+#regress out the continous variables (SIPs)
 med.rgr.cont <- apply(med.torgr[,1:12], 2, function(x) residuals.glm(glm(x ~ ageAtScan1 + 
     sex + race2, data = sample_qa ), type = "response"))
+
 #regress out the binary variables (everything else)
 med.rgr.binary <- apply(med.torgr[,13:111], 2, function(x) residuals.glm(glm(x ~ ageAtScan1 + 
     sex + race2, family= binomial(link="logit"),data = sample_qa ), type = "response"))
@@ -104,7 +109,7 @@ colnames(med.rgr) <- colnames(med.torgr)
 
 pwr_train_med_rgr <- med.rgr
 
-save(pwr_train_med_rgr, file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_med_rgr_data.RData")
+#save(pwr_train_med_rgr, file = "./projects/xiaNetworkCca/sCCA/aim1/result/201701/pwr_med_rgr_data.RData")
 
 ```
 
@@ -125,7 +130,7 @@ levelplot(power.cln.ave, at = seq(-0.5,0.5,length=10),par.settings = BuRdTheme()
 
 pwr.3k.train.ave <- power.cln.ave
 pwr.3k.train.idx <- inc_idx
-save(pwr.3k.train.ave,pwr.3k.train.idx,file ="./result/201701/pwr_3k_stats.RData")
+#save(pwr.3k.train.ave,pwr.3k.train.idx,file ="./result/201701/pwr_3k_stats.RData")
 ```
 
 

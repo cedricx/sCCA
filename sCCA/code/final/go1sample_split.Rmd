@@ -11,17 +11,17 @@ knitr::opts_chunk$set(
 	results = FALSE, eval = TRUE, cache = TRUE,
 	 fig.width = 8, fig.height = 10, tidy = TRUE
 )
-knitr::opts_knit$set(root.dir = '~/Desktop/BBL/')
+knitr::opts_knit$set(root.dir = '/data/joy/BBL/')
 ```
 
 ```{r load packages}
-#source('./script/chxRinitFunc.R')
+library('caret')
+library('ggplot2')
 ```
 
 ## Split 1601 into 2/3 and 1/3
 ```{r data split}
 #load data release
-setwd('~/Desktop/BBL/')
 bifactor <- read.csv('./studies/pnc/n1601_dataFreeze/clinical/n1601_goassess_clinical_factor_scores_20161212.csv')
 demogra <- read.csv('./studies/pnc/n1601_dataFreeze/demographics/n1601_demographics_go1_20161212.csv')
 go1data <- merge(bifactor,demogra, by = "bblid")
@@ -36,8 +36,8 @@ go1train <- go1nona[trainIndex,]
 go1test <- go1nona[-trainIndex,]
 
 #save the sample split
-write.csv(go1train,'./result/201701/go1train_subject.csv',row.names=FALSE, quote=FALSE)
-write.csv(go1test,'./result/201701/go1test_subject.csv',row.names=FALSE, quote=FALSE)
+#write.csv(go1train,'./result/201701/go1train_subject.csv',row.names=FALSE, quote=FALSE)
+#write.csv(go1test,'./result/201701/go1test_subject.csv',row.names=FALSE, quote=FALSE)
 ```
 #### The final training set for go1 has `r dim(go1train)[1]` subjects.
 #### The final testing set for go1 has `r dim(go1test)[1]` subjects.
